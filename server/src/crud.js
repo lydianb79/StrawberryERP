@@ -7,7 +7,7 @@ import { HttpError, h } from './util.js';
  * Generischer CRUD-Router für Stammdaten.
  * fields: { spalte: 's' | 'n' | 'b' }  (String, Zahl, Boolean)
  */
-export function crudRouter({ table, entity, perm, fields, required = [], search = [], orderBy = 'id DESC', autoNumber, validate, readPerm }) {
+export function crudRouter({ table, entity, perm, fields, required = [], search = [], orderBy = 'id DESC', autoNumber, validate, readPerm, afterSave, filters = [] }) {
   const r = Router();
   // perm kann 'modul' (→ modul.read / modul.write) oder ein vollständiges Recht wie 'admin.settings' sein.
   const full = perm.includes('.');
@@ -40,7 +40,17 @@ export function crudRouter({ table, entity, perm, fields, required = [], search 
       search.forEach(() => params.push(`%${req.query.q}%`));
     }
     if (req.query.active === '1' && 'active' in fields) where.push('active = 1');
-    res.json(await q(`SELECT * FROM ${table} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY ${orderBy} LIMIT 2000`, params));
+    for (const f of filters) if (req.query[f] !== undefined && req.query[f] !== '') { where.push(`${f} = ?`); params.push(req.query[f]); }
+    const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    // Mit ?page= wird seitenweise geliefert ({ rows, total }) – für sehr grosse Listen; ohne bleibt es bei der einfachen Liste.
+    if (req.query.page !== undefined) {
+      const size = Math.min(200, Math.max(1, Number(req.query.pageSize) || 50));
+      const page = Math.max(0, Number(req.query.page) || 0);
+      const [{ total }] = await q(`SELECT COUNT(*) AS total FROM ${table} ${clause}`, params);
+      const rows = await q(`SELECT * FROM ${table} ${clause} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [...params, size, page * size]);
+      return res.json({ rows, total, page, pageSize: size });
+    }
+    return res.json(await q(`SELECT * FROM ${table} ${clause} ORDER BY ${orderBy} LIMIT 2000`, params));
   }));
 
   r.get('/:id', readGuard, h(async (req, res) => {
@@ -58,7 +68,9 @@ export function crudRouter({ table, entity, perm, fields, required = [], search 
       return result.insertId;
     });
     await audit(req, 'create', entity, id);
-    res.status(201).json(await one(`SELECT * FROM ${table} WHERE id = ?`, [id]));
+    const row = await one(`SELECT * FROM ${table} WHERE id = ?`, [id]);
+    if (afterSave) await afterSave(row, req);
+    res.status(201).json(row);
   }));
 
   r.put('/:id', writeGuard, h(async (req, res) => {
@@ -68,7 +80,9 @@ export function crudRouter({ table, entity, perm, fields, required = [], search 
     const result = await q(`UPDATE ${table} SET ? WHERE id = ?`, [data, req.params.id]);
     if (!result.affectedRows) throw new HttpError(404, 'Eintrag nicht gefunden');
     await audit(req, 'update', entity, req.params.id);
-    res.json(await one(`SELECT * FROM ${table} WHERE id = ?`, [req.params.id]));
+    const row = await one(`SELECT * FROM ${table} WHERE id = ?`, [req.params.id]);
+    if (afterSave) await afterSave(row, req);
+    res.json(row);
   }));
 
   r.delete('/:id', writeGuard, h(async (req, res) => {

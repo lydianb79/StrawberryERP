@@ -44,6 +44,11 @@ const PATHS = {
   clip: 'M20 11l-8.500 8.500a5 5 0 0 1-7-7L13 4a3.500 3.500 0 0 1 5 5l-8.500 8.500a2 2 0 0 1-3-3L14 7',
   undo: 'M4 8h10a6 6 0 0 1 0 12H8M4 8l4-4M4 8l4 4',
   tag: 'M3 12V4h8l10 10-8 8zM7.500 7.500h.010',
+  timer: 'M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16M12 9v4l2.500 2M9 2h6',
+  folder: 'M3 6h6l2 3h10v10H3z',
+  wallet: 'M3 7h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 7l11-4 2 4M16 13.500h2',
+  clipboard: 'M9 4h6v3H9zM7 5.500H5V21h14V5.500h-2M8.500 12l2 2 4.500-4.500',
+  warehouse: 'M3 21V9l9-5 9 5v12M7 21v-8h10v8M7 17h10',
   bank: 'M3 10l9-6 9 6M5 10v8M9.500 10v8M14.500 10v8M19 10v8M3 20h18',
 };
 
@@ -156,7 +161,7 @@ const PAGE_SIZE = 50;
  * columns: [{ key, label, render?, num?, csv? }]
  * Grosse Listen werden seitenweise angezeigt. Mit onSearch sucht die Tabelle auf dem Server statt in den geladenen Zeilen.
  */
-export function DataTable({ columns, rows, onRowClick, empty = 'Keine Einträge vorhanden.', footer, exportName, toolbar, searchable = true, onSearch, note }) {
+export function DataTable({ columns, rows, onRowClick, empty = 'Keine Einträge vorhanden.', footer, exportName, toolbar, searchable = true, onSearch, note, paging, onExport }) {
   const [term, setTerm] = useState('');
   const [page, setPage] = useState(0);
   useEffect(() => {
@@ -170,9 +175,13 @@ export function DataTable({ columns, rows, onRowClick, empty = 'Keine Einträge 
     return rows.filter((r) => Object.values(r).some((v) => v != null && typeof v !== 'object' && String(v).toLowerCase().includes(t)));
   }, [rows, term, onSearch]);
   useEffect(() => { setPage(0); }, [term, rows]);
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const current = Math.min(page, pages - 1);
-  const visible = filtered.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE);
+  // paging = { page, pageSize, total, onPage }: die Zeilen sind bereits die aktuelle Seite vom Server
+  const size = paging?.pageSize || PAGE_SIZE;
+  const count = paging ? paging.total : filtered.length;
+  const pages = Math.max(1, Math.ceil(count / size));
+  const current = paging ? paging.page : Math.min(page, pages - 1);
+  const visible = paging ? filtered : filtered.slice(current * size, (current + 1) * size);
+  const go = (n) => (paging ? paging.onPage(n) : setPage(n));
   return (
     <div className="card">
       {(searchable || toolbar || exportName) && (
@@ -180,9 +189,9 @@ export function DataTable({ columns, rows, onRowClick, empty = 'Keine Einträge 
           {searchable && <input className="input search" placeholder="Suchen…" value={term} onChange={(e) => setTerm(e.target.value)} />}
           {toolbar}
           <div className="spacer" />
-          <span className="muted small">{filtered.length} {filtered.length === 1 ? 'Eintrag' : 'Einträge'}{note ? ` · ${note}` : ''}</span>
+          <span className="muted small">{count} {count === 1 ? 'Eintrag' : 'Einträge'}{note ? ` · ${note}` : ''}</span>
           {exportName && (
-            <button className="btn sm" onClick={() => downloadCsv(`${exportName}.csv`, columns.filter((c) => c.label), filtered)}>
+            <button className="btn sm" onClick={async () => downloadCsv(`${exportName}.csv`, columns.filter((c) => c.label), onExport ? await onExport() : filtered)}>
               <Icon name="download" /> CSV
             </button>
           )}
@@ -212,9 +221,9 @@ export function DataTable({ columns, rows, onRowClick, empty = 'Keine Einträge 
       </div>
       {pages > 1 && (
         <div className="pager no-print">
-          <button className="btn sm" disabled={current === 0} onClick={() => setPage(current - 1)}>Zurück</button>
-          <span className="muted small">Seite {current + 1} von {pages} · Zeilen {current * PAGE_SIZE + 1}–{Math.min(filtered.length, (current + 1) * PAGE_SIZE)}</span>
-          <button className="btn sm" disabled={current >= pages - 1} onClick={() => setPage(current + 1)}>Weiter</button>
+          <button className="btn sm" disabled={current === 0} onClick={() => go(current - 1)}>Zurück</button>
+          <span className="muted small">Seite {current + 1} von {pages} · Zeilen {current * size + 1}–{Math.min(count, (current + 1) * size)}</span>
+          <button className="btn sm" disabled={current >= pages - 1} onClick={() => go(current + 1)}>Weiter</button>
         </div>
       )}
     </div>
@@ -224,17 +233,26 @@ export function DataTable({ columns, rows, onRowClick, empty = 'Keine Einträge 
 /**
  * Auswahlfeld mit Suche – für lange Listen (Kunden, Artikel). options: [{ value, label, hint? }]
  */
-export function Combo({ options, value, onChange, placeholder = 'Suchen…', disabled, emptyLabel }) {
+export function Combo({ options: fixed = [], value, onChange, placeholder = 'Suchen…', disabled, emptyLabel, load, label }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [box, setBox] = useState(null);
+  const [loaded, setLoaded] = useState(null);
   const ref = useRef(null);
-  const selected = options.find((o) => String(o.value) === String(value));
+  // load(query) liefert die Treffer vom Server (für sehr grosse Stammdaten); label ist der Text des aktuell gewählten Werts
+  useEffect(() => {
+    if (!load || !open) return undefined;
+    let active = true;
+    const timer = setTimeout(() => load(query.trim()).then((list) => active && setLoaded(list)).catch(() => active && setLoaded([])), query ? 220 : 0);
+    return () => { active = false; clearTimeout(timer); };
+  }, [load, open, query]);
+  const options = load ? loaded || [] : fixed;
+  const selected = options.find((o) => String(o.value) === String(value)) || (label && value ? { value, label } : fixed.find((o) => String(o.value) === String(value)));
   const matches = useMemo(() => {
     const t = query.trim().toLowerCase();
-    const list = t ? options.filter((o) => `${o.label} ${o.hint || ''}`.toLowerCase().includes(t)) : options;
+    const list = t && !load ? options.filter((o) => `${o.label} ${o.hint || ''}`.toLowerCase().includes(t)) : options;
     return list.slice(0, 60);
-  }, [options, query]);
+  }, [options, query, load]);
   const show = () => {
     if (disabled) return;
     const r = ref.current.getBoundingClientRect();
@@ -249,7 +267,7 @@ export function Combo({ options, value, onChange, placeholder = 'Suchen…', dis
     window.addEventListener('resize', close);
     return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
   }, [open]);
-  const pick = (v) => { onChange(v); setOpen(false); };
+  const pick = (v) => { onChange(v, options.find((o) => String(o.value) === String(v))?.row); setOpen(false); };
   return (
     <div className="combo" ref={ref}>
       <input className="input" disabled={disabled} placeholder={selected ? selected.label : placeholder} title={selected?.label}
@@ -264,7 +282,7 @@ export function Combo({ options, value, onChange, placeholder = 'Suchen…', dis
               {o.label}{o.hint && <span className="muted small"> · {o.hint}</span>}
             </div>
           ))}
-          {!matches.length && <div className="combo-item muted">Keine Treffer</div>}
+          {!matches.length && <div className="combo-item muted">{load && loaded === null ? 'Lädt…' : 'Keine Treffer'}</div>}
           {matches.length === 60 && <div className="combo-item muted small">Weitere Treffer – bitte Suche verfeinern</div>}
         </div>
       )}

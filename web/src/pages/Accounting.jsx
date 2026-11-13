@@ -6,7 +6,7 @@ import { DataTable, Field, Icon, Modal, PageHead, useToast } from '../components
 const REF = {
   manual: 'Manuell', invoice: 'Rechnung', invoice_cancel: 'Storno', credit: 'Gutschrift', dunning: 'Mahngebühr', stock_valuation: 'Lagerbewertung',
   fx_valuation: 'Kursbewertung', payment: 'Zahlung', supplier_invoice: 'Kreditor',
-  closing: 'Abschluss', opening: 'Eröffnung',
+  closing: 'Abschluss', opening: 'Eröffnung', payroll: 'Lohn', payroll_payment: 'Lohnzahlung',
 };
 
 /** Lädt die Geschäftsjahre und wählt das aktuelle (oder jüngste offene) vor. */
@@ -144,6 +144,8 @@ export function Journal() {
           </select>
           <div className="spacer" />
           <span className="muted small">{entries ? `${entries.length} Buchungen` : ''}</span>
+          {yearId && <a className="btn sm" href={`/api/journal-export?year_id=${yearId}`} title="Eine Zeile pro Konto – für Excel und die meisten Buchhaltungsprogramme"><Icon name="download" /> Export Zeilen</a>}
+          {yearId && <a className="btn sm" href={`/api/journal-export?year_id=${yearId}&format=pairs`} title="Soll/Haben-Format für den Treuhänder (z.B. Import in Banana)"><Icon name="download" /> Export Soll/Haben</a>}
         </div>
         <div className="table-wrap">
           <table className="table">

@@ -78,3 +78,29 @@ export async function runDue(user, { onlyId = null, date = today() } = {}) {
   }
   return { created, errors };
 }
+
+export async function getOne(conn, id) {
+  const r = await one('SELECT r.*, c.company AS customer_name FROM recurring_invoices r JOIN customers c ON c.id = r.customer_id WHERE r.id = ?', [id], conn);
+  if (!r) throw new HttpError(404, 'Abo nicht gefunden');
+  r.template = JSON.parse(r.template);
+  return r;
+}
+
+/** Stammdaten und – falls mitgegeben – Positionen und Texte der Vorlage ändern. */
+export async function update(conn, id, b) {
+  const r = await getOne(conn, id);
+  if (!PERIODS[b.period]) throw new HttpError(400, 'Bitte einen Rhythmus wählen.');
+  const template = { ...r.template };
+  if (Array.isArray(b.items)) {
+    template.items = b.items.filter((i) => String(i.description || '').trim()).map((i) => ({
+      product_id: i.product_id || null, description: String(i.description).trim(), qty: Number(i.qty) || 0, unit: String(i.unit || '').slice(0, 20),
+      unit_price: Number(i.unit_price) || 0, discount_pct: Math.min(100, Math.max(0, Number(i.discount_pct) || 0)), vat_rate: Math.max(0, Number(i.vat_rate) || 0) }));
+    if (!template.items.length) throw new HttpError(400, 'Die Vorlage braucht mindestens eine Position.');
+  }
+  for (const k of ['reference', 'intro_text', 'footer_text']) if (k in b) template[k] = b[k] || null;
+  const next_date = needDate(b.next_date, 'Nächste Rechnung am');
+  template.anchor_day = Number(next_date.slice(8, 10));
+  await q('UPDATE recurring_invoices SET name = ?, period = ?, next_date = ?, end_date = ?, auto_issue = ?, active = ?, template = ? WHERE id = ?',
+    [String(b.name || '').slice(0, 160) || 'Abo', b.period, next_date, isDate(b.end_date) ? b.end_date : null, b.auto_issue ? 1 : 0, b.active ? 1 : 0,
+      JSON.stringify(template), id], conn);
+}

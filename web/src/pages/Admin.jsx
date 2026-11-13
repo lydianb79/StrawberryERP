@@ -196,6 +196,8 @@ export function CompanySettings() {
         { name: 'vat_method', label: 'MwSt-Abrechnungsmethode', type: 'select', required: true, options: [
           { value: 'agreed', label: 'Effektiv, vereinbartes Entgelt' }, { value: 'received', label: 'Effektiv, vereinnahmtes Entgelt' }, { value: 'net', label: 'Saldosteuersatz' }] },
         { name: 'vat_net_rate', label: 'Saldosteuersatz (%)', type: 'number', hint: 'Nur bei Methode Saldosteuersatz' },
+        { name: 'stock_valuation', label: 'Lagerbewertung', type: 'select', required: true, options: [
+          { value: 'last', label: 'Letzter Einstandspreis' }, { value: 'average', label: 'Gleitender Durchschnittspreis' }] },
         { name: 'app_url', label: 'Adresse der Anwendung', placeholder: 'https://erp.ihre-firma.ch', span: 2, hint: 'Für Links in E-Mails (Passwort zurücksetzen)' },
         { name: 'auto_rates', label: 'Fremdwährungskurse täglich automatisch aktualisieren (EZB)', type: 'checkbox', span: 'all' },
       ]} />
@@ -215,7 +217,9 @@ export function CompanySettings() {
             acc('receivables', 'Debitoren'), acc('payables', 'Kreditoren'), acc('bank', 'Standard-Zahlungskonto'), acc('revenue', 'Erlöskonto'),
             acc('vatPayable', 'Geschuldete MwSt'), acc('vatInput', 'Vorsteuer'), acc('retainedEarnings', 'Gewinnvortrag'), acc('yearResult', 'Jahresgewinn/-verlust'),
             acc('fxGain', 'Kursgewinne'), acc('fxLoss', 'Kursverluste'), acc('dunningFees', 'Mahngebühren'),
-            acc('inventory', 'Warenvorräte'), acc('inventoryChange', 'Bestandesänderungen'),
+            acc('inventory', 'Warenvorräte'), acc('inventoryChange', 'Bestandesänderungen'), acc('dunningInterest', 'Verzugszinsen'),
+            acc('wages', 'Lohnaufwand'), acc('socialExpense', 'Sozialaufwand Arbeitgeber'), acc('socialPayable', 'Verbindlichkeiten Sozialversicherungen'),
+            acc('wagesPayable', 'Geschuldete Löhne'),
           ]} />
       )}
     </div>
@@ -498,6 +502,8 @@ export function MailSettings() {
 export function SystemInfo() {
   const toast = useToast();
   const [info, setInfo] = useState(null);
+  const [mon, setMon] = useState(null);
+  useEffect(() => { api('/monitor').then(setMon).catch(() => setMon(null)); }, []);
   const load = useCallback((refresh) => {
     setInfo(null);
     api(`/system${refresh ? '?refresh=1' : ''}`).then(setInfo).catch((e) => toast.error(e.message));
@@ -544,6 +550,31 @@ export function SystemInfo() {
             </div>
             <p className="muted small" style={{ margin: 0 }}>Anpassungen am Datenbankschema werden beim Start der neuen Version automatisch und genau einmal ausgeführt (Migrationen). Ein Update ist ohne Datenverlust wiederholbar.</p>
           </div>
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-head"><h2>Überwachung</h2>
+          {mon?.monitor ? (mon.monitor.failing?.length ? <span className="badge red">{mon.monitor.failing.length} Störung(en)</span> : <span className="badge green">Alles in Ordnung</span>) : <span className="badge">Nicht eingerichtet</span>}
+        </div>
+        <div className="card-body">
+          {mon?.monitor ? (
+            <>
+              <table className="table">
+                <tbody>
+                  {Object.entries(mon.monitor.checks || {}).map(([k, c]) => (
+                    <tr key={k}><td style={{ width: 170 }}><b>{{ service: 'Anwendung', backup: 'Datensicherung', disk: 'Speicherplatz', units: 'Systemdienste', certificate: 'TLS-Zertifikat' }[k] || k}</b></td>
+                      <td>{c.ok ? <span className="badge green">OK</span> : <span className="badge red">Störung</span>}</td><td>{c.detail}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="muted small" style={{ marginBottom: 0 }}>
+                Letzte Prüfung: {fmtDateTime(mon.monitor.time.replace('T', ' '))} UTC · geprüft wird alle fünf Minuten. Meldungen gehen bei Statuswechseln an: {mon.monitor.recipients?.join(', ') || 'niemanden (kein Empfänger)'}.
+                {mon.monitor.mailError && <span className="neg"> {mon.monitor.mailError}</span>}
+              </p>
+            </>
+          ) : (
+            <p className="muted" style={{ margin: 0 }}>Die Überwachung läuft bei der nativen CentOS-Installation als systemd-Timer und meldet Störungen (Dienst, Datensicherung, Speicherplatz, Zertifikat) per E-Mail an die Administratoren. In dieser Umgebung ist sie nicht aktiv.</p>
+          )}
         </div>
       </div>
       {info.updateAvailable && info.latest.notes && (

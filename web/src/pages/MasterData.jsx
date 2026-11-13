@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import CrudPage from '../components/CrudPage.jsx';
 import { ACCOUNT_TYPES, LANGUAGES, api } from '../lib.js';
-import { useToast } from '../components/ui.jsx';
+import { Field, Icon, Modal, Tabs, useToast } from '../components/ui.jsx';
+import { CrmPanel } from '../components/shared.jsx';
+import { fmtDate } from '../lib.js';
 import { useAuth } from '../auth.js';
 
 /** Auswahllisten (Währungen, Konten, Lieferanten …) für Formulare. */
@@ -11,10 +13,104 @@ export function useLookup() {
   return lookup;
 }
 
+/** Ansprechpersonen eines Kunden oder Lieferanten sowie Notizen und Aufgaben zum Kunden. */
+function PartnerModal({ partner, kind, writable, users, onClose }) {
+  const toast = useToast();
+  const [tab, setTab] = useState('contacts');
+  const [rows, setRows] = useState(null);
+  const blank = { name: '', role: '', email: '', phone: '', mobile: '', is_primary: false };
+  const [form, setForm] = useState(blank);
+  const key = kind === 'supplier' ? 'supplier_id' : 'customer_id';
+  const load = () => api(`/contacts?${key}=${partner.id}`).then(setRows).catch(() => setRows([]));
+  useEffect(() => { load(); }, [partner.id]); // eslint-disable-line
+  const save = async (e) => {
+    e.preventDefault();
+    try {
+      if (form.id) await api(`/contacts/${form.id}`, { method: 'PUT', body: form });
+      else await api('/contacts', { method: 'POST', body: { ...form, [key]: partner.id } });
+      setForm(blank);
+      load();
+    } catch (err) { toast.error(err.message); }
+  };
+  const remove = async (c) => {
+    if (!window.confirm(`«${c.name}» entfernen?`)) return;
+    try { await api(`/contacts/${c.id}`, { method: 'DELETE' }); load(); } catch (err) { toast.error(err.message); }
+  };
+  const input = (name, label, type = 'text') => (
+    <Field label={label}><input className="input" type={type} required={name === 'name'} value={form[name] || ''} onChange={(e) => setForm({ ...form, [name]: e.target.value })} /></Field>
+  );
+  return (
+    <Modal title={`${partner.company} (${partner.number})`} onClose={onClose} wide>
+      {kind === 'customer' && <Tabs value={tab} onChange={setTab} tabs={[['contacts', 'Ansprechpersonen'], ['crm', 'Notizen & Aufgaben']]} />}
+      {tab === 'crm' ? <CrmPanel customerId={partner.id} users={users} /> : (
+        <div className="stack">
+          <table className="table">
+            <thead><tr><th>Name</th><th>Funktion</th><th>E-Mail</th><th>Telefon</th><th>Mobile</th><th /></tr></thead>
+            <tbody>
+              {(rows || []).map((c) => (
+                <tr key={c.id}>
+                  <td><b>{c.name}</b>{!!c.is_primary && <span className="badge blue" style={{ marginLeft: 6 }}>Hauptkontakt</span>}</td>
+                  <td>{c.role}</td><td>{c.email && <a href={`mailto:${c.email}`}>{c.email}</a>}</td><td>{c.phone}</td><td>{c.mobile}</td>
+                  <td className="actions">{writable && <>
+                    <button className="icon-btn" title="Bearbeiten" onClick={() => setForm({ ...c, is_primary: !!c.is_primary })}><Icon name="edit" /></button>
+                    <button className="icon-btn danger" title="Entfernen" onClick={() => remove(c)}><Icon name="trash" /></button></>}</td>
+                </tr>
+              ))}
+              {rows && !rows.length && <tr><td colSpan={6} className="muted">Noch keine Ansprechpersonen erfasst.</td></tr>}
+            </tbody>
+          </table>
+          {writable && (
+            <form onSubmit={save}>
+              <h3 style={{ marginBottom: 8 }}>{form.id ? 'Ansprechperson bearbeiten' : 'Ansprechperson hinzufügen'}</h3>
+              <div className="form-grid cols-3">
+                {input('name', 'Name *')}{input('role', 'Funktion')}{input('email', 'E-Mail', 'email')}{input('phone', 'Telefon')}{input('mobile', 'Mobile')}
+                <div className="field" style={{ justifyContent: 'flex-end' }}><label className="check"><input type="checkbox" checked={!!form.is_primary} onChange={(e) => setForm({ ...form, is_primary: e.target.checked })} /> Hauptkontakt</label></div>
+              </div>
+              <div className="row" style={{ marginTop: 12, justifyContent: 'flex-end' }}>
+                {form.id && <button type="button" className="btn" onClick={() => setForm(blank)}>Abbrechen</button>}
+                <button className="btn primary">{form.id ? 'Speichern' : 'Hinzufügen'}</button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function usePartnerModal(kind, perm) {
+  const { can } = useAuth();
+  const lookup = useLookup();
+  const [partner, setPartner] = useState(null);
+  return {
+    rowActions: (row) => <button className="btn sm" onClick={() => setPartner(row)}><Icon name="users" /> Kontakte</button>,
+    modal: partner && <PartnerModal partner={partner} kind={kind} writable={can(perm)} users={lookup?.users || []} onClose={() => setPartner(null)} />,
+  };
+}
+
+function RateHistory({ currency, base, onClose }) {
+  const [rows, setRows] = useState(null);
+  useEffect(() => { api(`/currency-history?code=${currency.code}`).then(setRows).catch(() => setRows([])); }, [currency.code]);
+  return (
+    <Modal title={`Kursverlauf ${currency.code}`} onClose={onClose}>
+      <p className="muted" style={{ marginTop: 0 }}>Neue Belege ohne Kursangabe erhalten den Kurs, der am Belegdatum gültig war.</p>
+      <div style={{ maxHeight: '50vh', overflowY: 'auto' }}>
+        <table className="table">
+          <thead><tr><th>Gültig ab</th><th className="num">1 {currency.code} = … {base}</th><th>Quelle</th></tr></thead>
+          <tbody>
+            {(rows || []).map((r) => <tr key={r.date}><td>{fmtDate(r.date)}</td><td className="num">{r.rate}</td><td>{r.source}</td></tr>)}
+            {rows && !rows.length && <tr><td colSpan={3} className="muted">Noch kein Verlauf vorhanden.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </Modal>
+  );
+}
+
 const activeBadge = (row) => (row.active ? <span className="badge green">Aktiv</span> : <span className="badge">Inaktiv</span>);
 
 const partnerColumns = [
-  { key: 'number', label: 'Nr.' },
+  { key: 'number', label: 'Nr.', render: (r) => <span className="nowrap">{r.number}</span> },
   { key: 'company', label: 'Firma / Name', render: (r) => <b>{r.company}</b> },
   { key: 'contact_name', label: 'Kontakt' },
   { key: 'city', label: 'Ort', render: (r) => [r.zip, r.city].filter(Boolean).join(' ') },
@@ -53,18 +149,20 @@ function useCurrencyCodes() {
 
 export function Customers() {
   const { base, codes } = useCurrencyCodes();
+  const contacts = usePartnerModal('customer', 'customers.write');
   return (
-    <CrudPage title="Kunden" subtitle="Kundenstamm mit Adressen und Konditionen" endpoint="/customers" writePerm="customers.write"
-      columns={partnerColumns} fields={partnerFields(codes, [{ name: 'discount_pct', label: 'Kundenrabatt (%)', type: 'number', hint: 'Wird auf neuen Belegpositionen vorgeschlagen' }])} defaults={partnerDefaults(base)} newLabel="Neuer Kunde" exportName="kunden" />
+    <>{contacts.modal}<CrudPage rowActions={contacts.rowActions} title="Kunden" subtitle="Kundenstamm mit Adressen und Konditionen" endpoint="/customers" writePerm="customers.write"
+      columns={partnerColumns} fields={partnerFields(codes, [{ name: 'discount_pct', label: 'Kundenrabatt (%)', type: 'number', hint: 'Wird auf neuen Belegpositionen vorgeschlagen' }])} defaults={partnerDefaults(base)} newLabel="Neuer Kunde" exportName="kunden" /></>
   );
 }
 
 export function Suppliers() {
   const { base, codes } = useCurrencyCodes();
+  const contacts = usePartnerModal('supplier', 'suppliers.write');
   return (
-    <CrudPage title="Lieferanten" subtitle="Lieferantenstamm für Einkauf und Kreditoren" endpoint="/suppliers" writePerm="suppliers.write"
+    <>{contacts.modal}<CrudPage rowActions={contacts.rowActions} title="Lieferanten" subtitle="Lieferantenstamm für Einkauf und Kreditoren" endpoint="/suppliers" writePerm="suppliers.write"
       columns={partnerColumns} fields={partnerFields(codes, [{ name: 'iban', label: 'IBAN' }])} defaults={partnerDefaults(base)}
-      newLabel="Neuer Lieferant" exportName="lieferanten" />
+      newLabel="Neuer Lieferant" exportName="lieferanten" /></>
   );
 }
 
@@ -108,6 +206,7 @@ export function Currencies() {
   const { settings } = useAuth();
   const toast = useToast();
   const [version, setVersion] = useState(0);
+  const [history, setHistory] = useState(null);
   const base = settings?.company?.currency || 'CHF';
   const refresh = async () => {
     try {
@@ -117,7 +216,8 @@ export function Currencies() {
     } catch (err) { toast.error(err.message); }
   };
   return (
-    <CrudPage key={version} headerActions={<button className="btn" onClick={refresh}>Kurse jetzt aktualisieren</button>} title="Währungen" subtitle={`Fremdwährungen und Kurse. Basiswährung der Buchhaltung: ${base}. Der Kurs gibt an, wie viel ${base} eine Einheit der Fremdwährung wert ist.`}
+    <>{history && <RateHistory currency={history} base={base} onClose={() => setHistory(null)} />}<CrudPage key={version} headerActions={<button className="btn" onClick={refresh}>Kurse jetzt aktualisieren</button>}
+      rowActions={(row) => (row.code === base ? null : <button className="btn sm" onClick={() => setHistory(row)}>Verlauf</button>)} title="Währungen" subtitle={`Fremdwährungen und Kurse. Basiswährung der Buchhaltung: ${base}. Der Kurs gibt an, wie viel ${base} eine Einheit der Fremdwährung wert ist.`}
       endpoint="/currencies" writePerm="admin.settings" newLabel="Neue Währung" exportName="waehrungen" defaults={{ rate: 1, active: true }}
       columns={[
         { key: 'code', label: 'Code', render: (r) => <b>{r.code}</b> },
@@ -130,6 +230,6 @@ export function Currencies() {
         { name: 'name', label: 'Bezeichnung', required: true },
         { name: 'rate', label: `Kurs: 1 Einheit = … ${base}`, type: 'number', required: true, hint: 'Vorschlagswert für neue Belege; pro Beleg und Zahlung überschreibbar' },
         { name: 'active', label: 'Aktiv', type: 'checkbox' },
-      ]} />
+      ]} /></>
   );
 }

@@ -52,7 +52,7 @@ r.put('/users/:id', can('admin.users'), h(async (req, res) => {
       data.password_hash = await bcrypt.hash(password, 12);
       data.token_version = user.token_version + 1; // bestehende Sitzungen des Benutzers beenden
     }
-    if (reset2fa) { data.totp_enabled = 0; data.totp_secret = null; }
+    if (reset2fa) { data.totp_enabled = 0; data.totp_secret = null; await q('DELETE FROM user_recovery_codes WHERE user_id = ?', [id], conn); }
     if (data.active === 0) data.token_version = user.token_version + 1;
     if (id === req.user.id && data.active === 0) throw new HttpError(400, 'Sie können sich nicht selbst deaktivieren.');
     if (Object.keys(data).length) await q('UPDATE users SET ? WHERE id = ?', [data, id], conn);

@@ -93,6 +93,15 @@ install -m 644 "$SRC_DIR/deploy/strawberryerp-backup.timer" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now strawberryerp-backup.timer
 
+echo "==> Überwachung (alle 5 Minuten: Dienst, Datensicherung, Speicherplatz, Zertifikat)"
+# Statusverzeichnis: die Sicherung (root) und die Überwachung (Dienstbenutzer) legen hier ihre Ergebnisse ab
+install -d -m 755 /var/lib/strawberryerp
+touch /var/lib/strawberryerp/monitor-status.json && chown "$APP_USER":"$APP_USER" /var/lib/strawberryerp/monitor-status.json && chmod 600 /var/lib/strawberryerp/monitor-status.json
+install -m 644 "$SRC_DIR/deploy/strawberryerp-monitor.service" /etc/systemd/system/strawberryerp-monitor.service
+install -m 644 "$SRC_DIR/deploy/strawberryerp-monitor.timer" /etc/systemd/system/strawberryerp-monitor.timer
+systemctl daemon-reload
+systemctl enable --now strawberryerp-monitor.timer
+
 echo "==> nginx (Reverse-Proxy)"
 # Eine mit deploy/enable-https.sh eingerichtete HTTPS-Konfiguration bleibt bei Updates unangetastet.
 if grep -qs 'ssl_certificate' /etc/nginx/conf.d/strawberryerp.conf; then

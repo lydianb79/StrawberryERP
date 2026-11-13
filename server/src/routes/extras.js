@@ -98,14 +98,12 @@ r.post('/recurring', can('invoices.write'), h(async (req, res) => {
 }));
 
 r.put('/recurring/:id', can('invoices.write'), h(async (req, res) => {
-  const b = req.body || {};
-  if (!recurring.PERIODS[b.period]) throw new HttpError(400, 'Bitte einen Rhythmus wählen.');
-  const result = await q('UPDATE recurring_invoices SET name = ?, period = ?, next_date = ?, end_date = ?, auto_issue = ?, active = ? WHERE id = ?',
-    [String(b.name || '').slice(0, 160) || 'Abo', b.period, b.next_date, b.end_date || null, b.auto_issue ? 1 : 0, b.active ? 1 : 0, req.params.id]);
-  if (!result.affectedRows) throw new HttpError(404, 'Abo nicht gefunden');
+  await tx((conn) => recurring.update(conn, req.params.id, req.body || {}));
   await audit(req, 'update', 'recurring', req.params.id);
   res.status(204).end();
 }));
+
+r.get('/recurring/:id', can('invoices.read'), h(async (req, res) => res.json(await recurring.getOne(undefined, req.params.id))));
 
 r.delete('/recurring/:id', can('invoices.write'), h(async (req, res) => {
   await q('DELETE FROM recurring_invoices WHERE id = ?', [req.params.id]);

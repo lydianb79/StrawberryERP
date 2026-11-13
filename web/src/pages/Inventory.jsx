@@ -4,12 +4,14 @@ import { DataTable, Field, Icon, Modal, PageHead, useToast } from '../components
 import { api, fmtDateTime, money, qty } from '../lib.js';
 import { useAuth } from '../auth.js';
 import { useLookup } from './MasterData.jsx';
+import { StockDetail } from './Stock.jsx';
 
-const MOVE = { in: ['Wareneingang', 'green'], out: ['Warenausgang', 'amber'], adjust: ['Inventurkorrektur', 'blue'] };
+const MOVE = { in: ['Wareneingang', 'green'], out: ['Warenausgang', 'amber'], adjust: ['Inventurkorrektur', 'blue'], transfer: ['Umlagerung', ''] };
 
-function StockModal({ product, onClose, onDone }) {
+function StockModal({ product, warehouses, onClose, onDone }) {
   const toast = useToast();
-  const [form, setForm] = useState({ type: 'in', qty: '', reference: '', note: '' });
+  const [form, setForm] = useState({ type: 'in', qty: '', reference: '', note: '', warehouse_id: warehouses[0]?.id || '', batch: '', unit_cost: '', expiry: '' });
+  const tracked = product.tracking && product.tracking !== 'none';
   const submit = async (e) => {
     e.preventDefault();
     try {
@@ -33,6 +35,16 @@ function StockModal({ product, onClose, onDone }) {
           <Field label={form.type === 'adjust' ? 'Neuer Bestand' : 'Menge'}>
             <input className="input num" type="number" step="any" min="0" required autoFocus value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} />
           </Field>
+          {warehouses.length > 1 && (
+            <Field label="Lagerort">
+              <select className="input" value={form.warehouse_id} onChange={(e) => setForm({ ...form, warehouse_id: e.target.value })}>
+                {warehouses.map((w) => <option key={w.id} value={w.id}>{w.code} {w.name}</option>)}
+              </select>
+            </Field>
+          )}
+          {form.type === 'in' && <Field label="Einstandspreis pro Einheit" hint="Führt den Durchschnittspreis nach"><input className="input num" type="number" step="0.0001" min="0" value={form.unit_cost} onChange={(e) => setForm({ ...form, unit_cost: e.target.value })} /></Field>}
+          {tracked && <Field label={product.tracking === 'serial' ? 'Seriennummer' : 'Charge'} hint={form.type === 'in' ? null : 'Leer = älteste Charge zuerst'}><input className="input" required={form.type === 'in'} value={form.batch} onChange={(e) => setForm({ ...form, batch: e.target.value })} /></Field>}
+          {tracked && form.type === 'in' && <Field label="Verfalldatum"><input className="input" type="date" value={form.expiry} onChange={(e) => setForm({ ...form, expiry: e.target.value })} /></Field>}
           <Field label="Referenz" hint="z.B. Lieferschein-Nr.">
             <input className="input" value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} />
           </Field>
@@ -95,6 +107,7 @@ export function Products() {
   const { can, settings } = useAuth();
   const [stock, setStock] = useState(null);
   const [pricing, setPricing] = useState(null);
+  const [detail, setDetail] = useState(null);
   const lookup = useLookup();
   const revenueAccounts = (lookup?.accounts || []).filter((a) => a.type === 'revenue');
   const rates = settings?.company?.vat_rates || [8.1, 2.6, 3.8, 0];
@@ -102,9 +115,9 @@ export function Products() {
     <>
       <CrudPage title="Artikel & Lager" subtitle="Artikelstamm, Preise und Lagerbestände" endpoint="/products" writePerm="inventory.write"
         newLabel="Neuer Artikel" exportName="artikel"
-        defaults={{ unit: 'Stk', vat_rate: settings?.company?.default_vat ?? 8.1, is_stock_item: true, active: true, sale_price: 0, purchase_price: 0, min_stock: 0 }}
+        defaults={{ tracking: 'none', unit: 'Stk', vat_rate: settings?.company?.default_vat ?? 8.1, is_stock_item: true, active: true, sale_price: 0, purchase_price: 0, min_stock: 0 }}
         columns={[
-          { key: 'sku', label: 'Art.-Nr.' },
+          { key: 'sku', label: 'Art.-Nr.', render: (r) => <span className="nowrap">{r.sku}</span> },
           { key: 'name', label: 'Bezeichnung', render: (r) => <b>{r.name}</b> },
           { key: 'sale_price', label: 'VK-Preis', num: true, render: (r) => money(r.sale_price) },
           { key: 'purchase_price', label: 'EK-Preis', num: true, render: (r) => money(r.purchase_price) },
@@ -126,6 +139,8 @@ export function Products() {
           { name: 'vat_rate', label: 'MwSt-Satz', type: 'select', required: true, options: rates.map((r) => ({ value: r, label: `${r} %` })) },
           { name: 'location', label: 'Lagerort' },
           { name: 'min_stock', label: 'Mindestbestand', type: 'number' },
+          { name: 'tracking', label: 'Rückverfolgung', type: 'select', required: true, options: [
+            { value: 'none', label: 'Keine' }, { value: 'batch', label: 'Chargen (FIFO)' }, { value: 'serial', label: 'Seriennummern' }] },
           { name: 'revenue_account_id', label: 'Erlöskonto', type: 'select', hint: 'Leer = Standard-Erlöskonto',
             options: revenueAccounts.map((a) => ({ value: a.id, label: `${a.number} ${a.name}` })) },
           { name: 'supplier_id', label: 'Hauptlieferant', type: 'select', hint: 'Für Bestellvorschläge',
@@ -135,12 +150,14 @@ export function Products() {
         ]}
         rowActions={(row, reload) => (can('inventory.write') ? (
           <span className="row" style={{ flexWrap: 'nowrap', justifyContent: 'flex-end' }}>
-            <button className="btn sm" onClick={() => setPricing(row)}><Icon name="tag" /> Preise</button>
+            <button className="icon-btn" title="Preise (Kunden- und Staffelpreise)" onClick={() => setPricing(row)}><Icon name="tag" /></button>
+            {!!row.is_stock_item && <button className="icon-btn" title="Bestand je Lagerort und Charge, Umlagern" onClick={() => setDetail({ product: row, reload })}><Icon name="warehouse" /></button>}
             {!!row.is_stock_item && <button className="btn sm" onClick={() => setStock({ product: row, reload })}><Icon name="swap" /> Buchen</button>}
           </span>
         ) : null)} />
       {pricing && <PriceModal product={pricing} customers={lookup?.customers || []} onClose={() => setPricing(null)} />}
-      {stock && <StockModal product={stock.product} onClose={() => setStock(null)} onDone={() => { stock.reload(); setStock(null); }} />}
+      {detail && <StockDetail product={detail.product} onClose={() => setDetail(null)} onChanged={detail.reload} />}
+      {stock && <StockModal product={stock.product} warehouses={lookup?.warehouses || []} onClose={() => setStock(null)} onDone={() => { stock.reload(); setStock(null); }} />}
     </>
   );
 }
@@ -159,6 +176,8 @@ export function StockMovements() {
         { key: 'type', label: 'Art', render: (r) => <span className={`badge ${MOVE[r.type][1]}`}>{MOVE[r.type][0]}</span>, csv: (r) => MOVE[r.type][0] },
         { key: 'qty', label: 'Menge', num: true, render: (r) => <span className={r.qty < 0 ? 'neg' : 'pos'}>{r.qty > 0 ? '+' : ''}{qty(r.qty)}</span> },
         { key: 'balance_after', label: 'Bestand danach', num: true, render: (r) => qty(r.balance_after) },
+        { key: 'warehouse_code', label: 'Lagerort' },
+        { key: 'batch', label: 'Charge' },
         { key: 'reference', label: 'Referenz' },
         { key: 'note', label: 'Bemerkung' },
         { key: 'user_name', label: 'Benutzer' },

@@ -26,7 +26,7 @@ export function crossRate(perEur, code, base) {
 export async function refreshRates(conn) {
   let parsed;
   try {
-    const res = await fetch(SOURCE, { headers: { 'User-Agent': 'StrawberryERP-rates' }, signal: AbortSignal.timeout(8000) });
+    const res = await fetch(SOURCE, { headers: { 'User-Agent': 'StrawberryERP-rates' }, signal: AbortSignal.timeout(20000) });
     if (!res.ok) throw new Error(`Status ${res.status}`);
     parsed = parseEcb(await res.text());
   } catch (err) {
@@ -39,6 +39,8 @@ export async function refreshRates(conn) {
     const rate = crossRate(parsed.perEur, cur.code, base);
     if (!rate) { skipped.push(cur.code); continue; }
     await q('UPDATE currencies SET rate = ? WHERE id = ?', [rate, cur.id], conn);
+    await q('INSERT INTO currency_rates (code, date, rate, source) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE rate = VALUES(rate), source = VALUES(source)',
+      [cur.code, parsed.date || new Date().toISOString().slice(0, 10), rate, 'EZB'], conn);
     updated.push({ code: cur.code, rate });
   }
   return { date: parsed.date, base, updated, skipped, source: 'Europäische Zentralbank (Referenzkurse)' };

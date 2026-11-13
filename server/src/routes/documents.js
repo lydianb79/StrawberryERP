@@ -101,8 +101,9 @@ r.post('/:id/issue', h(async (req, res) => {
 
 r.post('/:id/cancel', h(async (req, res) => {
   need(req, 'invoices.write');
-  const doc = await tx((conn) => docs.cancelInvoice(conn, req.user, req.params.id));
-  await audit(req, 'cancel', 'invoice', doc.id, doc.number);
+  const type = await typeOf(req.params.id);
+  const doc = await tx((conn) => (type === 'credit' ? docs.cancelCredit(conn, req.user, req.params.id) : docs.cancelInvoice(conn, req.user, req.params.id)));
+  await audit(req, 'cancel', type, doc.id, doc.number);
   res.json(await docs.getDocument(undefined, req.params.id));
 }));
 

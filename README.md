@@ -8,30 +8,35 @@ Ausgelegt auf Schweizer Verhältnisse (CHF, MwSt-Sätze, Kontenrahmen KMU), Ober
 | Bereich | Umfang |
 |---|---|
 | **Kundenverwaltung** | Kunden- und Lieferantenstamm, automatische Nummernvergabe, Zahlungsfristen, CSV-Export |
-| **Lagerverwaltung** | Artikelstamm (Lagerartikel und Dienstleistungen), Wareneingang/-ausgang, Inventurkorrektur, Mindestbestand mit Nachbestell-Hinweis, lückenloses Bewegungsprotokoll |
+| **Lagerverwaltung** | Artikelstamm (Lagerartikel und Dienstleistungen), mehrere Lagerorte mit Umlagerung, Chargen und Seriennummern (FIFO-Entnahme, Rückverfolgung), geführte Inventur, Bewertung nach letztem Einstandspreis oder gleitendem Durchschnitt, Mindestbestand, lückenloses Bewegungsprotokoll |
+| **Projekte und Zeiterfassung** | Projekte mit Stundensatz und Budget, Arbeitszeit erfassen, offene Stunden in einen Rechnungsentwurf übernehmen |
+| **Kontakte** | Mehrere Ansprechpersonen pro Kunde und Lieferant, Notizen und Aufgaben zu Kunden und Belegen, eigene Aufgaben auf dem Dashboard |
+| **Lohn** | Mitarbeitende, monatlicher Lohnlauf mit einstellbaren Abzugssätzen, Lohnabrechnung als PDF, Verbuchung, Zahlungsdatei für die Auszahlung |
 | **Offerten** | Erstellen, PDF, Status (Entwurf → Gesendet → Akzeptiert/Abgelehnt), Umwandlung in Auftrag oder Rechnung |
 | **Auftragsverwaltung** | Auftragsbestätigung als PDF, Teillieferungen mit Lagerabgang, Teilrechnungen, Storno |
 | **Rechnungsstellung** | Entwurf → Buchen (fortlaufende Nummer, Debitorenbuchung, Lagerabgang), Teil-/Vollzahlung, Storno mit Gegenbuchung |
-| **Gutschriften** | Voll- und Teilgutschriften zu Rechnungen, automatische Verrechnung mit dem offenen Posten, Wiedereinlagerung, Auszahlung von Guthaben |
+| **Gutschriften** | Voll- und Teilgutschriften zu Rechnungen, automatische Verrechnung mit dem offenen Posten, Wiedereinlagerung, Auszahlung von Guthaben, Storno |
 | **Abo-Rechnungen** | Wiederkehrende Rechnungen (monatlich bis jährlich) aus einer Vorlage, automatisch zum Termin erstellt – als Entwurf oder direkt gebucht |
-| **Mahnwesen** | Mahnstufen mit Fristen, Texten und Gebühren, Mahnlauf, Mahnschreiben als PDF mit QR-Zahlteil, Versand per E-Mail |
+| **Mahnwesen** | Mahnstufen mit Fristen, Texten, Gebühren und Verzugszins, Mahnlauf, Mahnschreiben als PDF mit QR-Zahlteil, Sammelmahnung pro Kunde, Versand per E-Mail |
 | **Zahlungsabgleich** | Kontoauszüge camt.053/camt.054 einlesen, Zuordnung über QR-Referenz oder Rechnungsnummer, Duplikaterkennung |
+| **Zahlungsdateien** | Lieferantenzahlungen und Löhne als pain.001-Datei für das E-Banking |
+| **Bankabstimmung** | Buchsaldo gegen Kontoauszug, Buchungen als abgestimmt markieren, Schlusssaldo aus camt.053 übernehmen, Abstimmungen festhalten |
 | **QR-Rechnung** | Zahlteil mit Swiss QR Code direkt auf der Rechnung (CHF/EUR), QR-Referenz bei QR-IBAN, sonst Creditor Reference (RF…) |
 | **E-Mail-Versand** | Offerten, Auftragsbestätigungen, Rechnungen und Bestellungen als PDF per SMTP versenden; Textvorlagen mit Platzhaltern |
 | **Bestellwesen** | Bestellungen an Lieferanten mit PDF, Bestellvorschlag aus Mindestbeständen, Teil- und Vollwareneingang ins Lager, Lieferantenrechnung direkt aus der Bestellung |
-| **Fremdwährungen** | Währungen mit Kursen (Abruf der EZB-Referenzkurse auf Knopfdruck oder täglich), Belege in Fremdwährung, Kursgewinne/-verluste bei Zahlung automatisch gebucht, Stichtagsbewertung offener Posten |
+| **Fremdwährungen** | Währungen mit Kursen und Kursverlauf (Abruf der EZB-Referenzkurse auf Knopfdruck oder täglich; Belege erhalten den Kurs ihres Datums), Belege in Fremdwährung, Kursgewinne/-verluste bei Zahlung automatisch gebucht, Stichtagsbewertung offener Posten |
 | **Preislisten** | Kundenspezifische Preise, Staffelpreise nach Menge, Kundenrabatt als Vorschlag auf Belegpositionen |
 | **Mehrsprachige Belege** | Offerten, Rechnungen, Mahnungen usw. auf Deutsch, Französisch, Italienisch oder Englisch – je Kunde hinterlegt, pro Beleg wählbar |
 | **Kostenstellen** | Zuordnung auf Belegen, Lieferantenrechnungen und manuellen Buchungen; Auswertung Ertrag/Aufwand/Ergebnis je Kostenstelle |
 | **Beleglayout** | Logo-Upload (PNG/JPEG), Position und Grösse, 3 Vorlagen, Akzentfarbe, Schrift, Adressfeld links/rechts, ein-/ausblendbare Spalten, Standardtexte mit Platzhaltern, **Live-Vorschau** |
-| **Debitoren / Kreditoren** | Offene Posten, Fälligkeitsstruktur (0 / 1–30 / 31–60 / >60 Tage), Zahlungsein- und -ausgänge, Lieferantenrechnungen mit Vorsteuer und Belegablage (PDF/Bild) |
-| **Finanzbuchhaltung** | Doppelte Buchhaltung, automatische Buchungen aus Belegen, Erlöskonto pro Artikel, manuelle Buchungen, Kontenplan, Journal |
+| **Debitoren / Kreditoren** | Offene Posten, Fälligkeitsstruktur (0 / 1–30 / 31–60 / >60 Tage), Zahlungsein- und -ausgänge, Lieferantenrechnungen mit Vorsteuer; Belegablage (PDF/Bild) für alle Belege |
+| **Finanzbuchhaltung** | Doppelte Buchhaltung, automatische Buchungen aus Belegen, Erlöskonto pro Artikel, manuelle Buchungen, Kontenplan, Journal mit CSV-Export für den Treuhänder (Buchungszeilen oder Soll/Haben) |
 | **Bilanz und Erfolgsrechnung** | Pro Geschäftsjahr, druckbar |
 | **MwSt-Abrechnung** | Nach vereinbartem oder vereinnahmtem Entgelt oder mit Saldosteuersatz, mit den Ziffern des ESTV-Formulars |
 | **Jahresabschluss** | Abschlussarbeiten (Warenlager in die Bilanz, Bewertung Fremdwährungen), Assistent mit Prüfungen; Abschluss der Erfolgskonten, Sperren des Jahres, Anlegen des Folgejahres, **Saldovortrag als Eröffnungsbilanz**, Gewinnvortrag; rückgängig machbar, solange das Folgejahr offen ist |
 | **Reporting** | Dashboard mit Kennzahlen, Umsatz pro Monat, Top-Kunden/-Artikel, Fälligkeitslisten, Lagerbewertung, MwSt-Übersicht; CSV-Export aller Listen |
 | **Administration** | Firmendaten, Nummernkreise, Standardkonten, Währungen, E-Mail-Server, Protokoll (Audit-Log), System & Updates |
-| **Benutzer & Rollen** | Benutzerverwaltung, rollenbasierter Zugriff mit 25 Einzelrechten, Zwei-Faktor-Anmeldung (TOTP), «Passwort vergessen» per E-Mail; vordefinierte Rollen: Administrator, Buchhaltung, Verkauf, Lager, Nur Lesen |
+| **Benutzer & Rollen** | Benutzerverwaltung, rollenbasierter Zugriff mit 30 Einzelrechten, Zwei-Faktor-Anmeldung (TOTP) mit Wiederherstellungscodes, «Passwort vergessen» per E-Mail; vordefinierte Rollen: Administrator, Buchhaltung, Verkauf, Lager, Nur Lesen |
 
 ## Technologie
 
@@ -170,6 +175,16 @@ journalctl -u strawberryerp-backup.service -n 20    # Ergebnis der letzten Läuf
 Eine Sicherung auf demselben Server schützt nicht vor dessen Ausfall. Für eine Kopie an einen zweiten Ort in `/etc/strawberryerp.env`
 `BACKUP_RSYNC_TARGET=benutzer@backupserver:/pfad/` setzen (SSH-Schlüssel für root vorausgesetzt) – jede Sicherung wird dann zusätzlich dorthin kopiert.
 
+**Überwachung:** Ein zweiter Timer (`strawberryerp-monitor.timer`) prüft alle fünf Minuten, ob die Anwendung antwortet, die Systemdienste laufen,
+die letzte Datensicherung gelungen und nicht älter als 26 Stunden ist, genügend Speicherplatz frei ist und das TLS-Zertifikat nicht bald abläuft.
+Bei einem Statuswechsel (Störung oder Behebung) geht eine E-Mail an alle Administratoren – oder an `MONITOR_EMAIL` in `/etc/strawberryerp.env`;
+eine andauernde Störung wird einmal täglich erinnert. Voraussetzung ist ein eingerichteter E-Mail-Versand (*Administration → E-Mail*).
+Der aktuelle Stand steht unter *Administration → System & Updates*.
+
+```bash
+sudo systemctl start strawberryerp-monitor.service && journalctl -u strawberryerp-monitor.service -n 12   # sofort prüfen
+```
+
 Wiederherstellen: `systemctl stop strawberryerp`, dann `gunzip -c DATEI.sql.gz | mysql -uroot strawberryerp`, danach `systemctl start strawberryerp`.
 
 Mit Docker: `docker compose exec db sh -c 'mysqldump -ustrawberry -p"$MYSQL_PASSWORD" --no-tablespaces strawberryerp' | gzip > backup.sql.gz`
@@ -218,6 +233,7 @@ automatisch und genau einmal ausgeführt; der Stand steht in der Tabelle `schema
 | `HOST`, `PORT` | Bind-Adresse und Port des Servers (Standard `0.0.0.0:3000`) |
 | `UPDATE_CHECK` | `false` = keine Abfrage bei GitHub nach neuen Releases |
 | `SCHEDULER` | `false` = keine Hintergrundaufgaben (Abo-Rechnungen erzeugen, Kurse aktualisieren) |
+| `MONITOR_EMAIL` | Empfänger der Überwachungsmeldungen (Standard: alle Administratoren); `MONITOR_BACKUP_MAX_AGE_HOURS`, `MONITOR_DISK_LIMIT_PERCENT`, `MONITOR_CERT_DAYS` ändern die Schwellen |
 
 Das Datenbankschema wird beim Start automatisch angelegt (`server/src/schema.sql`), ebenso Rollen, Kontenplan und das laufende Geschäftsjahr.
 
@@ -236,6 +252,9 @@ Belege erzeugen automatisch Buchungen (Konten unter *Administration → Firma & 
 | Gutschrift | 3200 Erlöse, 2200 MwSt | 1100 Debitoren |
 | Mahngebühr | 1100 Debitoren | 3890 Mahngebühren |
 | Bestandesänderung Warenlager | 1200 Vorräte | 4800 Bestandesänderungen |
+| Verzugszins | 1100 Debitoren | 6950 Finanzertrag |
+| Lohnlauf | 5000 Lohnaufwand, 5700 Sozialaufwand | 2270 Sozialversicherungen, 2275 Geschuldete Löhne |
+| Lohnzahlung | 2275 Geschuldete Löhne | 1020 Bank |
 
 **Nichts wird gelöscht:** Buchungen, Zahlungen und Lieferantenrechnungen lassen sich nur stornieren. Dabei entsteht eine Gegenbuchung;
 Original und Storno bleiben im Journal sichtbar und sind miteinander verknüpft. Eine Korrektur ist ein Storno mit anschliessender Neubuchung.
@@ -265,6 +284,24 @@ werden über die Zahlungsreferenz der QR-Rechnung oder die Rechnungsnummer im Mi
 **Abschlussarbeiten** (*Finanzen → Jahresabschluss*): «Warenlager in die Bilanz übernehmen» bucht die Differenz zwischen Lagerwert und Konto 1200.
 «Fremdwährungsposten bewerten» bucht nicht realisierte Kursdifferenzen zum Stichtag und macht sie am Folgetag automatisch rückgängig.
 
+**Lager:** Jede Bewegung gehört zu einem Lagerort; Belege buchen auf den ersten aktiven Lagerort, Umlagerungen erfolgen beim Artikel unter «Bestand».
+Bei chargen- oder seriennummerngeführten Artikeln verlangt der Wareneingang eine Charge; Abgänge ohne Angabe entnehmen die älteste Charge zuerst.
+Die geführte Inventur hält den Sollbestand fest, nimmt die Zählung auf und bucht beim Abschluss nur die Abweichungen.
+Die Bewertungsmethode (letzter Einstandspreis oder gleitender Durchschnitt) wird in den Firmendaten gewählt.
+
+**Projekte:** Zeiten werden mit dem Stundensatz des Projekts erfasst. «Abrechnen» übernimmt alle offenen, verrechenbaren Stunden in einen
+Rechnungsentwurf; wird der Entwurf gelöscht, sind die Stunden wieder offen.
+
+**Lohn** (*Lohn → Lohnläufe*): Ein Lauf rechnet je Person Monatslohn plus Zulage, zieht die prozentualen Beiträge und den BVG-Betrag ab und zählt
+Spesen beitragsfrei dazu. Buchen erzeugt Lohn- und Sozialaufwand, «Als ausbezahlt buchen» den Bankabgang. Die vorbelegten Sätze sind Richtwerte und
+müssen mit den Verfügungen der Ausgleichskasse und der Versicherer abgeglichen werden.
+
+**Zahlungsdateien:** Unter *Kreditoren* offene Rechnungen ankreuzen und «Zahlungsdatei» wählen; die pain.001-Datei wird im E-Banking hochgeladen.
+Die Datei bucht nichts – die Zahlung wird danach wie gewohnt erfasst.
+
+**Bankabstimmung** (*Finanzen → Bankabstimmung*): Buchungen, die auf dem Kontoauszug stehen, werden abgehakt. Der abgestimmte Saldo
+(Buchsaldo abzüglich noch nicht abgehakter Buchungen) muss dem Saldo des Auszugs entsprechen.
+
 **MwSt:** Die Methode (vereinbart, vereinnahmt, Saldosteuersatz) wird in den Firmendaten gewählt und lässt sich im Report umschalten.
 
 **QR-Rechnung:** Sobald in den Firmendaten eine gültige CH/LI-IBAN hinterlegt ist, erhält jede gebuchte Rechnung in CHF oder EUR den
@@ -283,7 +320,7 @@ Der Lagerabgang wird beim Ausliefern des Auftrags gebucht – oder beim Buchen d
 ## Sicherheit
 
 - Passwörter mit bcrypt (Kostenfaktor 12), Sitzung als `HttpOnly`/`SameSite=Strict`-Cookie, Login-Rate-Limit
-- **Zwei-Faktor-Anmeldung** mit Authenticator-App (TOTP), pro Benutzer unter *Konto & Sicherheit* einzurichten; ein Administrator kann sie bei Geräteverlust zurücksetzen
+- **Zwei-Faktor-Anmeldung** mit Authenticator-App (TOTP), pro Benutzer unter *Konto & Sicherheit* einzurichten. Beim Aktivieren werden zehn einmalig verwendbare Wiederherstellungscodes angezeigt; zusätzlich kann ein Administrator den zweiten Faktor zurücksetzen
 - **Passwort vergessen:** Link per E-Mail, 60 Minuten und einmalig gültig. Voraussetzung ist ein eingerichteter E-Mail-Versand; die *Adresse der Anwendung* in den Firmendaten bestimmt den Link
 - Passwortwechsel, Zurücksetzen und Deaktivieren beenden sofort alle bestehenden Sitzungen des Benutzers
 - Jede API-Route prüft die Berechtigung der Rolle serverseitig
@@ -300,13 +337,15 @@ Der Lagerabgang wird beim Ausliefern des Auftrags gebucht – oder beim Buchen d
    Mahnstufen unter *Debitoren → Mahnwesen* und die MwSt-Methode in den Firmendaten prüfen.
 6. Eröffnungssalden (z.B. Bankguthaben, Eigenkapital) als manuelle Buchung im Journal erfassen.
 
-## Bekannte Grenzen (Stand 1.2)
+## Bekannte Grenzen (Stand 1.3)
 
-- Zahlungsabgleich nur für Zahlungseingänge; Zahlungsausgänge (pain.001) werden nicht erzeugt
-- Abo-Rechnungen: Positionen einer Vorlage lassen sich nicht direkt bearbeiten (neues Abo aus angepasster Rechnung anlegen)
+- **Lohn:** einfache Monatslohnabrechnung – ohne Quellensteuer, Lohnausweis, 13. Monatslohn, Kinderzulagen, Stundenlöhne und Lohnmeldung (ELM)
+- **Zahlungsdateien (pain.001):** nur IBAN-Zahlungen in CHF und EUR; nach den Swiss Payment Standards erzeugt, aber nicht mit einer Bank erprobt
+- **Lagerorte:** Verkaufs- und Einkaufsbelege buchen auf den ersten aktiven Lagerort; die Wahl des Lagerorts pro Beleg fehlt
+- **Chargen:** Abgänge aus Belegen folgen FIFO; eine gezielte Chargenwahl pro Belegposition fehlt. Seriennummern werden wie Chargen geführt
+- **Bankabstimmung:** Abhaken von Hand; der Kontoauszug wird nicht automatisch Zeile für Zeile verglichen
+- **Treuhänder-Export:** CSV in zwei Formaten, kein herstellerspezifisches Format (Abacus, Sage usw.)
 - Standardtexte und E-Mail-Vorlagen sind nur auf Deutsch anpassbar; für FR/IT/EN gelten mitgelieferte Belegtexte
-- Keine Wiederherstellungscodes für die Zwei-Faktor-Anmeldung – verliert der einzige Administrator sein Gerät, muss der zweite Faktor in der Datenbank zurückgesetzt werden
-- Gutschriften lassen sich nicht stornieren; eine verrechnete Gutschrift wird mit einer neuen Rechnung korrigiert
 - Die MwSt-Auswertung ist eine Abrechnungshilfe und ersetzt nicht die offizielle Abrechnung; das System ersetzt keine Treuhand-/Revisionsprüfung
 
 ## Automatische Tests
@@ -316,11 +355,11 @@ docker compose -f docker-compose.test.yml up --build --abort-on-container-exit -
 docker compose -f docker-compose.test.yml down -v
 ```
 
-Die Suite startet eine frische Wegwerf-Datenbank, die Anwendung und einen Mail-Fänger und prüft über die API:
-Anmeldung, Rollenrechte, Zwei-Faktor-Anmeldung und Passwort-Reset, Stammdaten und Lager, den Belegfluss von der Offerte bis zur Zahlung,
-Teillieferung und Teilrechnung, Gutschriften, Mahnwesen, Zahlungsabgleich, Abo-Rechnungen, Storno statt Löschen, Fremdwährungen,
-Bestellwesen, Buchhaltung, MwSt-Methoden, PDF und QR-Rechnung, E-Mail-Versand sowie den Jahresabschluss mit Saldovortrag (57 Tests). Dazu kommen Unit-Tests der Rechenlogik (`server/test/unit.test.js`).
-Nach jeder Buchung wird geprüft, dass die Bilanz ausgeglichen ist.
+Die Suite startet eine frische Wegwerf-Datenbank, die Anwendung und einen Mail-Fänger und prüft über die API alle Geschäftsabläufe:
+Anmeldung, Rollenrechte, Zwei-Faktor-Anmeldung mit Wiederherstellungscodes, Belegfluss, Teillieferung, Gutschriften samt Storno, Mahnwesen mit
+Verzugszins und Sammelmahnung, Zahlungsabgleich, Zahlungsdateien, Abo-Rechnungen, Fremdwährungen und Kurshistorie, Bestellwesen, Lagerorte,
+Chargen, Inventur, Projekte und Zeiterfassung, Kontakte, Bankabstimmung, Journal-Export, Lohn, Blättern in grossen Listen, PDF, E-Mail-Versand
+und den Jahresabschluss. Dazu kommen Unit-Tests der Rechenlogik und der Überwachung (75 Tests). Nach jeder Buchung wird geprüft, dass die Bilanz ausgeglichen ist.
 
 Die Oberfläche selbst (Klickwege im Browser) ist nicht automatisiert getestet.
 

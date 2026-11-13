@@ -32,7 +32,9 @@ function last12(monthly) {
 export default function Dashboard() {
   const { user, can } = useAuth();
   const [data, setData] = useState(null);
-  useEffect(() => { api('/reports/dashboard').then(setData).catch(() => setData({})); }, []);
+  const [tasks, setTasks] = useState([]);
+  const loadTasks = () => api('/crm?mine=1').then(setTasks).catch(() => setTasks([]));
+  useEffect(() => { api('/reports/dashboard').then(setData).catch(() => setData({})); loadTasks(); }, []);
   if (!data) return <div className="empty">Lädt…</div>;
   const f = data.finance;
 
@@ -74,6 +76,23 @@ export default function Dashboard() {
           ) : <div className="empty">Alle Bestände über dem Mindestbestand.</div>}
         </div>
       </div>
+
+      {tasks.length > 0 && (
+        <div className="card">
+          <div className="card-head"><h2>Meine offenen Aufgaben</h2></div>
+          <table className="table">
+            <tbody>
+              {tasks.map((t) => (
+                <tr key={t.id}>
+                  <td style={{ width: 36 }}><input type="checkbox" title="Erledigt" onChange={() => api(`/crm/${t.id}`, { method: 'PUT', body: { done: true } }).then(loadTasks)} /></td>
+                  <td><b>{t.text}</b><div className="muted small">{t.customer_name}{t.document_number ? ` · ${t.document_number}` : ''}</div></td>
+                  <td className="num">{t.due_date ? <span className={t.due_date < new Date().toISOString().slice(0, 10) ? 'neg' : ''}>fällig {fmtDate(t.due_date)}</span> : ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {f && can('invoices.read') && (
         <div className="card">

@@ -3,6 +3,7 @@ import { q, one } from '../db.js';
 import { can, has } from '../auth.js';
 import { h, today, isDate, round2 } from '../util.js';
 import { getSettings } from '../services/settings.js';
+import { unitValueSql } from '../services/stock.js';
 
 const r = Router();
 // Umsatz = gebuchte Rechnungen abzüglich gebuchter Gutschriften
@@ -16,17 +17,44 @@ const range = (req) => {
 
 /** Auswahllisten für Formulare – für alle angemeldeten Benutzer. */
 r.get('/lookup', h(async (_req, res) => {
-  const [customers, suppliers, products, accounts, years, currencies, costCenters, prices] = await Promise.all([
-    q('SELECT id, number, company, payment_terms_days, currency, email, discount_pct, language FROM customers WHERE active = 1 ORDER BY company'),
-    q('SELECT id, number, company, payment_terms_days, currency, email, language FROM suppliers WHERE active = 1 ORDER BY company'),
-    q('SELECT id, sku, name, description, unit, sale_price, purchase_price, vat_rate, stock_qty, min_stock, is_stock_item, supplier_id FROM products WHERE active = 1 ORDER BY sku'),
+  const [customers, suppliers, products, accounts, years, currencies, costCenters, prices, warehouses, users, projects] = await Promise.all([
+    q('SELECT id, number, company, payment_terms_days, currency, email, discount_pct, language FROM customers WHERE active = 1 ORDER BY company LIMIT 500'),
+    q('SELECT id, number, company, payment_terms_days, currency, email, language, iban FROM suppliers WHERE active = 1 ORDER BY company LIMIT 500'),
+    q('SELECT id, sku, name, description, unit, sale_price, purchase_price, vat_rate, stock_qty, min_stock, is_stock_item, supplier_id, tracking FROM products WHERE active = 1 ORDER BY sku LIMIT 500'),
     q('SELECT id, number, name, type FROM accounts WHERE active = 1 ORDER BY number'),
     q('SELECT id, name, start_date, end_date, status FROM fiscal_years ORDER BY start_date DESC'),
     q('SELECT code, name, rate FROM currencies WHERE active = 1 ORDER BY code'),
     q('SELECT id, code, name FROM cost_centers WHERE active = 1 ORDER BY code'),
-    q('SELECT product_id, customer_id, min_qty, price FROM product_prices'),
+    q('SELECT product_id, customer_id, min_qty, price FROM product_prices LIMIT 5000'),
+    q('SELECT id, code, name FROM warehouses WHERE active = 1 ORDER BY id'),
+    q('SELECT id, name FROM users WHERE active = 1 ORDER BY name'),
+    q("SELECT id, number, name, customer_id FROM projects WHERE status = 'open' ORDER BY number DESC LIMIT 500"),
   ]);
-  res.json({ customers, suppliers, products, accounts, years, currencies, costCenters, prices });
+  res.json({ customers, suppliers, products, accounts, years, currencies, costCenters, prices, warehouses, users, projects });
+}));
+
+/**
+ * Suche für Auswahlfelder (Kunden, Lieferanten, Artikel) – liefert höchstens 30 Treffer, damit auch sehr grosse
+ * Stammdaten flüssig bleiben. Artikel bringen ihre Sonderpreise gleich mit.
+ */
+r.get('/search', h(async (req, res) => {
+  const term = `%${String(req.query.q || '').trim()}%`;
+  const id = req.query.id ? Number(req.query.id) : null;
+  if (req.query.kind === 'products') {
+    const rows = id
+      ? await q('SELECT id, sku, name, description, unit, sale_price, purchase_price, vat_rate, stock_qty, min_stock, is_stock_item, supplier_id, tracking FROM products WHERE id = ?', [id])
+      : await q(`SELECT id, sku, name, description, unit, sale_price, purchase_price, vat_rate, stock_qty, min_stock, is_stock_item, supplier_id, tracking
+                   FROM products WHERE active = 1 AND (sku LIKE ? OR name LIKE ?) ORDER BY sku LIMIT 30`, [term, term]);
+    const prices = rows.length ? await q('SELECT product_id, customer_id, min_qty, price FROM product_prices WHERE product_id IN (?)', [rows.map((x) => x.id)]) : [];
+    for (const p of rows) p.prices = prices.filter((x) => x.product_id === p.id);
+    return res.json(rows);
+  }
+  const table = req.query.kind === 'suppliers' ? 'suppliers' : 'customers';
+  const cols = table === 'suppliers' ? 'id, number, company, payment_terms_days, currency, email, language, iban'
+    : 'id, number, company, payment_terms_days, currency, email, discount_pct, language';
+  return res.json(id
+    ? await q(`SELECT ${cols} FROM ${table} WHERE id = ?`, [id])
+    : await q(`SELECT ${cols} FROM ${table} WHERE active = 1 AND (company LIKE ? OR number LIKE ? OR city LIKE ?) ORDER BY company LIMIT 30`, [term, term, term]));
 }));
 
 r.get('/dashboard', h(async (req, res) => {
@@ -52,7 +80,7 @@ r.get('/dashboard', h(async (req, res) => {
       one(`SELECT COALESCE(SUM((total - paid_amount) * exchange_rate),0) AS amount, COUNT(*) AS n,
                   COALESCE(SUM(CASE WHEN due_date < ? THEN (total - paid_amount) * exchange_rate ELSE 0 END),0) AS overdue
              FROM supplier_invoices WHERE status IN ('open','partial')`, [t]),
-      one('SELECT COALESCE(SUM(stock_qty * purchase_price),0) AS amount FROM products WHERE is_stock_item = 1 AND active = 1'),
+      one(`SELECT COALESCE(SUM(stock_qty * ${unitValueSql((await getSettings()).company.stock_valuation)}),0) AS amount FROM products WHERE is_stock_item = 1 AND active = 1`),
       q(`SELECT DATE_FORMAT(d.date, '%Y-%m') AS month, SUM(${SIGN} * d.subtotal * d.exchange_rate) AS amount FROM documents d
           WHERE ${BILLED} AND d.date >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 11 MONTH)
           GROUP BY month ORDER BY month`),
@@ -107,9 +135,10 @@ r.get('/payables', can('reports.read', 'payables.read'), h(async (_req, res) => 
 }));
 
 r.get('/stock', can('reports.read', 'inventory.read'), h(async (_req, res) => {
+  const method = (await getSettings()).company.stock_valuation;
   res.json(await q(
-    `SELECT id, sku, name, unit, location, stock_qty, min_stock, purchase_price, sale_price,
-            stock_qty * purchase_price AS stock_value, (stock_qty <= min_stock) AS low
+    `SELECT id, sku, name, unit, location, stock_qty, min_stock, purchase_price, avg_cost, sale_price, tracking,
+            ${unitValueSql(method)} AS unit_value, stock_qty * ${unitValueSql(method)} AS stock_value, (stock_qty <= min_stock) AS low
        FROM products WHERE is_stock_item = 1 AND active = 1 ORDER BY sku`));
 }));
 

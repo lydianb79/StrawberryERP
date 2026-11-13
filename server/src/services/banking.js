@@ -77,3 +77,20 @@ export async function matchEntries(conn, entries) {
     return { ...e, match, state: 'match', hint: Math.abs(e.amount - invOpen) < 0.005 ? `Zuordnung über ${by}` : `Teilzahlung, Zuordnung über ${by}` };
   });
 }
+
+/** Schlusssaldo (CLBD) eines camt.053-Kontoauszugs: Betrag mit Vorzeichen, Datum und IBAN. */
+export function parseCamtBalance(xml) {
+  if (typeof xml !== 'string' || !xml.includes('<')) throw new HttpError(400, 'Die Datei enthält kein XML.');
+  let root;
+  try {
+    root = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@', removeNSPrefix: true, parseTagValue: false }).parse(xml);
+  } catch {
+    throw new HttpError(400, 'Die Datei konnte nicht gelesen werden (ungültiges XML).');
+  }
+  const stmt = arr(root?.Document?.BkToCstmrStmt?.Stmt)[0];
+  if (!stmt) throw new HttpError(400, 'Kein camt.053-Kontoauszug erkannt (nur dieser enthält Saldi).');
+  const bal = arr(stmt.Bal).find((b) => text(b.Tp?.CdOrPrtry?.Cd) === 'CLBD') || arr(stmt.Bal).at(-1);
+  if (!bal) throw new HttpError(400, 'Der Kontoauszug enthält keinen Schlusssaldo.');
+  const amount = round2(text(bal.Amt)) * (text(bal.CdtDbtInd) === 'DBIT' ? -1 : 1);
+  return { balance: amount, date: text(bal.Dt?.Dt || bal.Dt?.DtTm).slice(0, 10), currency: bal.Amt?.['@Ccy'] || '', iban: norm(text(stmt.Acct?.Id?.IBAN)) };
+}

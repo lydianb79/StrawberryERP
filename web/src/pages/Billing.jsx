@@ -5,6 +5,7 @@ import { api, fmtDate, fmtDateTime, money } from '../lib.js';
 import { useAuth } from '../auth.js';
 import { DataTable, Field, Icon, Modal, PageHead, useToast } from '../components/ui.jsx';
 import { MailModal } from './DocumentEditor.jsx';
+import { ItemsEditor } from '../components/shared.jsx';
 
 // ---------- Mahnwesen ----------
 function DunningSettings({ onClose }) {
@@ -15,8 +16,8 @@ function DunningSettings({ onClose }) {
   const save = async (e) => {
     e.preventDefault();
     try {
-      await api('/settings/dunning', { method: 'PUT', body: { paymentDays: Number(form.paymentDays) || 10,
-        levels: form.levels.map((l) => ({ ...l, days: Number(l.days) || 0, fee: Number(l.fee) || 0 })) } });
+      await api('/settings/dunning', { method: 'PUT', body: { paymentDays: Number(form.paymentDays) || 10, interestRate: Number(form.interestRate) || 0,
+        levels: form.levels.map((l) => ({ ...l, days: Number(l.days) || 0, fee: Number(l.fee) || 0, interest: !!l.interest })) } });
       await reloadSettings();
       toast('Mahnstufen gespeichert.');
       onClose();
@@ -25,14 +26,18 @@ function DunningSettings({ onClose }) {
   return (
     <Modal title="Mahnstufen einrichten" onClose={onClose} wide>
       <form onSubmit={save} className="stack">
-        <Field label="Neue Zahlungsfrist ab Mahndatum (Tage)"><input className="input num" style={{ maxWidth: 140 }} type="number" min="1" value={form.paymentDays} onChange={(e) => setForm({ ...form, paymentDays: e.target.value })} /></Field>
+        <div className="form-grid">
+          <Field label="Neue Zahlungsfrist ab Mahndatum (Tage)"><input className="input num" type="number" min="1" value={form.paymentDays} onChange={(e) => setForm({ ...form, paymentDays: e.target.value })} /></Field>
+          <Field label="Verzugszins (% pro Jahr)" hint="Auf dem offenen Rechnungsbetrag, für Stufen mit Zins; 0 = kein Zins"><input className="input num" type="number" min="0" step="0.1" value={form.interestRate ?? 0} onChange={(e) => setForm({ ...form, interestRate: e.target.value })} /></Field>
+        </div>
         {form.levels.map((l, i) => (
           <div className="card" key={i}>
             <div className="card-body">
               <div className="form-grid cols-4">
                 <Field label={`Stufe ${i + 1}: Bezeichnung`} className="span-2"><input className="input" required value={l.title} onChange={(e) => setLevel(i, { title: e.target.value })} /></Field>
                 <Field label={i === 0 ? 'Tage nach Fälligkeit' : 'Tage nach Vorstufe'}><input className="input num" type="number" min="0" value={l.days} onChange={(e) => setLevel(i, { days: e.target.value })} /></Field>
-                <Field label="Mahngebühr"><input className="input num" type="number" min="0" step="0.05" value={l.fee} onChange={(e) => setLevel(i, { fee: e.target.value })} /></Field>
+                <Field label="Mahngebühr"><input className="input num" type="number" min="0" step="0.05" value={l.fee} onChange={(e) => setLevel(i, { fee: e.target.value })} />
+                  <label className="check small" style={{ marginTop: 4 }}><input type="checkbox" checked={!!l.interest} onChange={(e) => setLevel(i, { interest: e.target.checked })} /> mit Verzugszins</label></Field>
                 <Field label="Text auf dem Schreiben" className="span-all" hint="Platzhalter: {frist} = neue Zahlungsfrist, {nummer}, {kunde}"><textarea className="input" rows={3} value={l.text} onChange={(e) => setLevel(i, { text: e.target.value })} /></Field>
               </div>
               {form.levels.length > 1 && <button type="button" className="btn sm danger" style={{ marginTop: 10 }} onClick={() => setForm({ ...form, levels: form.levels.filter((_, j) => j !== i) })}>Stufe entfernen</button>}
@@ -58,12 +63,15 @@ export function DunningTab() {
   const [picked, setPicked] = useState(new Set());
   const [mail, setMail] = useState(null);
   const [config, setConfig] = useState(false);
+  const [groups, setGroups] = useState(null);
+  const [groupMail, setGroupMail] = useState(null);
   const writable = can('receivables.write');
 
   const load = useCallback(() => {
     api('/dunning/proposals').then((list) => { setProps(list); setPicked(new Set(list.filter((p) => p.eligible).map((p) => p.id))); })
       .catch((e) => { setProps([]); toast.error(e.message); });
     api('/dunning').then(setNotices).catch(() => setNotices([]));
+    api('/dunning-collective').then(setGroups).catch(() => setGroups([]));
   }, [toast]);
   useEffect(() => { load(); }, [load]);
 
@@ -95,7 +103,7 @@ export function DunningTab() {
         { key: 'open_amount', label: 'Offen', num: true, render: (r) => `${r.currency} ${money(r.open_amount)}` },
         { key: 'dunning_level', label: 'Bisher', render: (r) => (r.dunning_level ? `Stufe ${r.dunning_level} am ${fmtDate(r.dunning_date)}` : 'nicht gemahnt') },
         { key: 'next', label: 'Nächster Schritt', render: (r) => (!r.next_level ? <span className="badge red">Höchste Stufe erreicht</span>
-          : r.eligible ? <span className="badge amber">{r.next_title}{r.next_fee > 0 ? ` (+ ${money(r.next_fee)})` : ''}</span>
+          : r.eligible ? <span className="badge amber">{r.next_title}{r.next_fee + r.next_interest > 0 ? ` (+ ${money(r.next_fee + r.next_interest)})` : ''}</span>
             : <span className="muted">{r.next_title} in {r.wait_days} Tagen</span>) },
       ]} />
 
@@ -106,6 +114,7 @@ export function DunningTab() {
         { key: 'customer_name', label: 'Kunde' },
         { key: 'level', label: 'Stufe', num: true },
         { key: 'fee', label: 'Gebühr', num: true, render: (r) => money(r.fee) },
+        { key: 'interest', label: 'Zins', num: true, render: (r) => money(r.interest) },
         { key: 'open_amount', label: 'Offen bei Mahnung', num: true, render: (r) => `${r.currency} ${money(r.open_amount)}` },
         { key: 'due_date', label: 'Neue Frist', render: (r) => fmtDate(r.due_date), csv: (r) => fmtDate(r.due_date) },
         { key: 'sent_at', label: 'Versendet', render: (r) => (r.sent_at ? fmtDateTime(r.sent_at) : '–') },
@@ -116,6 +125,24 @@ export function DunningTab() {
           </span>
         ) },
       ]} />
+      <h2>Sammelmahnung pro Kunde</h2>
+      <DataTable searchable={false} rows={groups} empty="Keine Kunden mit überfälligen Rechnungen." columns={[
+        { key: 'company', label: 'Kunde', render: (r) => <b>{r.company}</b> },
+        { key: 'invoices', label: 'Überfällige Rechnungen', num: true },
+        { key: 'oldest_due', label: 'Älteste Fälligkeit', render: (r) => fmtDate(r.oldest_due) },
+        { key: 'max_level', label: 'Höchste Mahnstufe', num: true, render: (r) => r.max_level || '–' },
+        { key: 'base_open', label: 'Offen total', num: true, render: (r) => money(r.base_open) },
+        { key: '_actions', label: '', render: (r) => (
+          <span className="row" style={{ flexWrap: 'nowrap', justifyContent: 'flex-end' }}>
+            <a className="btn sm" href={`/api/dunning-collective/${r.id}/pdf`} target="_blank" rel="noreferrer"><Icon name="pdf" /> PDF</a>
+            {writable && <button className="btn sm" onClick={() => setGroupMail(r)}><Icon name="mail" /> E-Mail</button>}
+          </span>
+        ) },
+      ]} />
+      {groupMail && (
+        <MailModal title={`Sammelmahnung an ${groupMail.company} senden`} draftPath={`/dunning-collective/${groupMail.id}/mail`} sendPath={`/dunning-collective/${groupMail.id}/send`}
+          onClose={() => setGroupMail(null)} onSent={() => setGroupMail(null)} />
+      )}
       {mail && (
         <MailModal title={`Mahnung zu ${mail.number} per E-Mail senden`} draftPath={`/dunning/${mail.id}/mail`} sendPath={`/dunning/${mail.id}/send`}
           onClose={() => setMail(null)} onSent={() => { setMail(null); load(); }} />
@@ -259,7 +286,13 @@ export function Recurring() {
         {writable && <button className="btn" onClick={() => runNow(null)}><Icon name="repeat" /> Fällige jetzt erstellen</button>}
       </PageHead>
       <div className="alert info" style={{ marginBottom: 16 }}>Ein neues Abo legen Sie aus einer bestehenden Rechnung an: Rechnung öffnen → <b>Als Abo</b>. Positionen und Texte der Rechnung dienen als Vorlage.</div>
-      <DataTable rows={rows} exportName="abo-rechnungen" onRowClick={writable ? (r) => setEditing({ ...r, active: !!r.active, auto_issue: !!r.auto_issue, end_date: r.end_date || '' }) : undefined}
+      <DataTable rows={rows} exportName="abo-rechnungen" onRowClick={writable ? async (r) => {
+          try {
+            const full = await api(`/recurring/${r.id}`);
+            setEditing({ ...full, active: !!full.active, auto_issue: !!full.auto_issue, end_date: full.end_date || '', items: full.template.items,
+              reference: full.template.reference || '', intro_text: full.template.intro_text || '', footer_text: full.template.footer_text || '' });
+          } catch (err) { toast.error(err.message); }
+        } : undefined}
         empty="Noch keine Abo-Rechnungen eingerichtet." columns={[
           { key: 'name', label: 'Bezeichnung', render: (r) => <b>{r.name}</b> },
           { key: 'customer_name', label: 'Kunde' },
@@ -272,7 +305,7 @@ export function Recurring() {
           { key: '_actions', label: '', render: (r) => writable && !!r.active && <button className="btn sm" onClick={() => runNow(r.id)}>Jetzt ausführen</button> },
         ]} />
       {editing && (
-        <Modal title={`Abo: ${editing.name}`} onClose={() => setEditing(null)}>
+        <Modal title={`Abo: ${editing.name}`} onClose={() => setEditing(null)} wide>
           <form onSubmit={save}>
             <div className="form-grid">
               <Field label="Bezeichnung *" className="span-all"><input className="input" required value={editing.name} onChange={(e) => set({ name: e.target.value })} /></Field>
@@ -288,7 +321,9 @@ export function Recurring() {
                 <label className="check"><input type="checkbox" checked={editing.active} onChange={(e) => set({ active: e.target.checked })} /> Aktiv</label>
               </div>
             </div>
-            <p className="muted small">Positionen ändern: aus einer angepassten Rechnung ein neues Abo anlegen und dieses hier beenden.</p>
+            <Field label="Referenz / Betreff" className="span-all"><input className="input" value={editing.reference} onChange={(e) => set({ reference: e.target.value })} /></Field>
+            <h3 style={{ margin: '16px 0 8px' }}>Positionen der Vorlage</h3>
+            <ItemsEditor items={editing.items} onChange={(items) => set({ items })} />
             <div className="row" style={{ marginTop: 14 }}>
               <button type="button" className="btn danger" onClick={remove}><Icon name="trash" /> Löschen</button>
               <div className="spacer" />

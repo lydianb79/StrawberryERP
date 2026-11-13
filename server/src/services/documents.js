@@ -95,7 +95,7 @@ async function headerFields(conn, type, data, partner, current) {
     valid_until = isDate(data.valid_until) ? data.valid_until : addDays(date, settings.company.quote_validity_days);
   }
   if (type === 'purchase') due_date = isDate(data.due_date) ? data.due_date : null; // gewünschter Liefertermin
-  const cur = await resolveCurrency(conn, data.currency ?? current?.currency, data.exchange_rate ?? current?.exchange_rate, partner.currency);
+  const cur = await resolveCurrency(conn, data.currency ?? current?.currency, data.exchange_rate ?? current?.exchange_rate, partner.currency, date);
   let cost_center_id = data.cost_center_id === undefined ? current?.cost_center_id ?? null : data.cost_center_id || null;
   if (cost_center_id && !(await one('SELECT id FROM cost_centers WHERE id = ?', [cost_center_id], conn))) cost_center_id = null;
   const language = [data.language, current?.language, partner.language].find((l) => LANGUAGES.includes(l)) || 'de';
@@ -388,7 +388,7 @@ export function openItemBase(total, rate, previousPayments, amount, baseDue) {
 }
 
 async function invoiceBaseDue(conn, doc) {
-  const fees = await q('SELECT fee FROM dunning_notices WHERE document_id = ?', [doc.id], conn);
+  const fees = await q('SELECT fee + interest AS fee FROM dunning_notices WHERE document_id = ?', [doc.id], conn);
   return doc.dunning_fees > 0
     ? round2(toBase(doc.total, doc.exchange_rate) + fees.reduce((s, f) => s + toBase(f.fee, doc.exchange_rate), 0))
     : toBase(doc.total, doc.exchange_rate);
@@ -487,6 +487,26 @@ export async function issueCredit(conn, user, id, { restock = true } = {}) {
   return number;
 }
 
+/** Gutschrift stornieren: Buchung und Lagerzugang aufheben, Verrechnung mit der Rechnung zurücknehmen. */
+export async function cancelCredit(conn, user, id) {
+  const doc = await lockDocument(conn, id);
+  if (doc.type !== 'credit' || !['open', 'paid'].includes(doc.status)) throw new HttpError(400, 'Nur gebuchte Gutschriften können storniert werden.');
+  const refunds = await one('SELECT COUNT(*) AS n FROM payments WHERE document_id = ? AND reversed_at IS NULL', [id], conn);
+  if (refunds.n) throw new HttpError(400, 'Bitte zuerst die Auszahlungen dieser Gutschrift stornieren.');
+  await reverseEntriesByRef(conn, 'credit', id, { user_id: user?.id, text: `Storno Gutschrift ${doc.number}` });
+  if (doc.stock_booked === 1) await moveDocumentStock(conn, id, -1, `Storno ${doc.number}`, user?.id);
+  // Verrechnung mit der Rechnung zurücknehmen: der Eintrag bleibt als storniert sichtbar
+  const applied = await q('SELECT * FROM payments WHERE credit_note_id = ? AND reversed_at IS NULL', [id], conn);
+  for (const a of applied) {
+    const inv = await lockDocument(conn, a.document_id);
+    const paid = round2(inv.paid_amount - a.amount);
+    await q('UPDATE payments SET reversed_at = NOW() WHERE id = ?', [a.id], conn);
+    await q('UPDATE documents SET paid_amount = ?, status = ? WHERE id = ?', [paid, payStatus(dueTotal(inv), paid), inv.id], conn);
+  }
+  await q("UPDATE documents SET status = 'cancelled', paid_amount = 0, stock_booked = 0 WHERE id = ?", [id], conn);
+  return doc;
+}
+
 // ---------- Bestellwesen ----------
 
 /** Wareneingang zu einer Bestellung. received: [{ item_id, qty }] – ohne Angabe wird die gesamte Restmenge gebucht. */
@@ -497,6 +517,7 @@ export async function receivePurchase(conn, user, id, received) {
   const wanted = Array.isArray(received) && received.length
     ? new Map(received.map((r) => [Number(r.item_id), Number(r.qty) || 0]))
     : new Map(items.map((it) => [it.id, Math.max(0, it.qty - it.qty_received)]));
+  const batches = new Map((Array.isArray(received) ? received : []).map((r) => [Number(r.item_id), r]));
   let booked = 0;
   for (const it of items) {
     const qty = r3(wanted.get(it.id));
@@ -505,9 +526,11 @@ export async function receivePurchase(conn, user, id, received) {
     if (qty > rest + EPS) throw new HttpError(400, `Position ${it.position}: Es sind nur noch ${rest} ${it.unit || ''} offen.`);
     await q('UPDATE document_items SET qty_received = qty_received + ? WHERE id = ?', [qty, it.id], conn);
     if (it.product_id) {
-      await moveStock(conn, { product_id: it.product_id, delta: qty, type: 'in', reference: doc.number, note: 'Wareneingang Bestellung', user_id: user?.id });
-      // Einstandspreis des Artikels auf den letzten Einkaufspreis (in Basiswährung) nachführen
+      // Einstandspreis in Basiswährung: führt den letzten Einkaufspreis und den gleitenden Durchschnittspreis nach
       const net = round2(it.unit_price * (1 - it.discount_pct / 100) * doc.exchange_rate);
+      const extra = batches.get(it.id) || {};
+      await moveStock(conn, { product_id: it.product_id, delta: qty, type: 'in', reference: doc.number, note: 'Wareneingang Bestellung', user_id: user?.id,
+        unit_cost: net, batch: extra.batch, expiry: extra.expiry, warehouse_id: extra.warehouse_id });
       if (net > 0) await q('UPDATE products SET purchase_price = ? WHERE id = ?', [net, it.product_id], conn);
     }
     booked += 1;

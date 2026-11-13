@@ -24,6 +24,27 @@ export const validatePassword = (pw) => {
   if (typeof pw !== 'string' || pw.length < 10) throw new HttpError(400, 'Das Passwort muss mindestens 10 Zeichen lang sein.');
 };
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
+const normCode = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+/** Erzeugt zehn Einmalcodes (Format XXXX-XXXX); gespeichert werden nur Hashwerte. Alte Codes verfallen. */
+async function newRecoveryCodes(userId) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // ohne verwechselbare Zeichen
+  const codes = Array.from({ length: 10 }, () => {
+    const raw = Array.from(crypto.randomBytes(8), (b) => alphabet[b % alphabet.length]).join('');
+    return `${raw.slice(0, 4)}-${raw.slice(4)}`;
+  });
+  await q('DELETE FROM user_recovery_codes WHERE user_id = ?', [userId]);
+  await q('INSERT INTO user_recovery_codes (user_id, code_hash) VALUES ?', [codes.map((c) => [userId, sha256(normCode(c))])]);
+  return codes;
+}
+
+/** Löst einen Wiederherstellungscode ein (einmalig). */
+async function useRecoveryCode(userId, code) {
+  const n = normCode(code);
+  if (n.length !== 8) return false;
+  const result = await q('UPDATE user_recovery_codes SET used_at = NOW() WHERE user_id = ? AND code_hash = ? AND used_at IS NULL', [userId, sha256(n)]);
+  return result.affectedRows === 1;
+}
 
 r.post('/login', loginLimiter, h(async (req, res) => {
   const email = String(req.body?.email || '').trim().toLowerCase();
@@ -35,7 +56,9 @@ r.post('/login', loginLimiter, h(async (req, res) => {
   if (row.totp_enabled) {
     const code = String(req.body?.code || '').trim();
     if (!code) return res.status(401).json({ error: 'Bitte den Code aus der Authenticator-App eingeben.', twoFactorRequired: true });
-    if (!verifyTotp(row.totp_secret, code)) return res.status(401).json({ error: 'Der Code ist falsch oder abgelaufen.', twoFactorRequired: true });
+    const recovery = !verifyTotp(row.totp_secret, code) && await useRecoveryCode(row.id, code);
+    if (!verifyTotp(row.totp_secret, code) && !recovery) return res.status(401).json({ error: 'Der Code ist falsch oder abgelaufen.', twoFactorRequired: true });
+    if (recovery) { req.user = { id: row.id, name: email }; await audit(req, '2fa-recovery-code', 'user', row.id); }
   }
   await q('UPDATE users SET last_login = NOW() WHERE id = ?', [row.id]);
   res.cookie(COOKIE, signToken(row.id, row.token_version), cookieOptions());
@@ -80,15 +103,30 @@ r.post('/2fa/enable', authenticate, h(async (req, res) => {
   if (!row.totp_secret || !verifyTotp(row.totp_secret, req.body?.code)) throw new HttpError(400, 'Der Code stimmt nicht. Bitte den aktuellen Code aus der App eingeben.');
   await q('UPDATE users SET totp_enabled = 1 WHERE id = ?', [req.user.id]);
   await audit(req, '2fa-enable', 'user', req.user.id);
-  res.status(204).end();
+  // Die Codes werden genau einmal angezeigt
+  res.json({ recoveryCodes: await newRecoveryCodes(req.user.id) });
 }));
 
 r.post('/2fa/disable', authenticate, h(async (req, res) => {
   const row = await one('SELECT password_hash FROM users WHERE id = ?', [req.user.id]);
   if (!(await bcrypt.compare(String(req.body?.password || ''), row.password_hash))) throw new HttpError(400, 'Das Passwort ist falsch.');
   await q('UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE id = ?', [req.user.id]);
+  await q('DELETE FROM user_recovery_codes WHERE user_id = ?', [req.user.id]);
   await audit(req, '2fa-disable', 'user', req.user.id);
   res.status(204).end();
+}));
+
+r.get('/2fa/recovery-codes', authenticate, h(async (req, res) => {
+  const row = await one('SELECT COUNT(*) AS total, COALESCE(SUM(used_at IS NULL), 0) AS unused FROM user_recovery_codes WHERE user_id = ?', [req.user.id]);
+  res.json({ total: row.total, unused: Number(row.unused) });
+}));
+
+r.post('/2fa/recovery-codes', authenticate, h(async (req, res) => {
+  if (!req.user.totp_enabled) throw new HttpError(400, 'Die Zwei-Faktor-Anmeldung ist nicht aktiv.');
+  const row = await one('SELECT password_hash FROM users WHERE id = ?', [req.user.id]);
+  if (!(await bcrypt.compare(String(req.body?.password || ''), row.password_hash))) throw new HttpError(400, 'Das Passwort ist falsch.');
+  await audit(req, '2fa-recovery-codes-new', 'user', req.user.id);
+  res.json({ recoveryCodes: await newRecoveryCodes(req.user.id) });
 }));
 
 // ---------- Passwort vergessen ----------

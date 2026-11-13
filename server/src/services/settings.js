@@ -23,6 +23,7 @@ export const DEFAULTS = {
     vat_method: 'agreed', // agreed = vereinbartes Entgelt | received = vereinnahmtes Entgelt | net = Saldosteuersatz
     vat_net_rate: 0,
     auto_rates: false,
+    stock_valuation: 'last', // last = letzter Einstandspreis | average = gleitender Durchschnittspreis
     app_url: '',
   },
   layout: {
@@ -74,16 +75,39 @@ export const DEFAULTS = {
     dunningFees: '3890',
     inventory: '1200',
     inventoryChange: '4800',
+    dunningInterest: '6950',
+    wages: '5000',
+    socialExpense: '5700',
+    socialPayable: '2270',
+    wagesPayable: '2275',
   },
   dunning: {
     paymentDays: 10, // neue Zahlungsfrist ab Mahndatum
+    interestRate: 5, // Verzugszins in % pro Jahr, auf Stufen mit interest: true
     levels: [
       { title: 'Zahlungserinnerung', days: 10, fee: 0,
         text: 'Sicher ist es Ihrer Aufmerksamkeit entgangen, dass die nachstehende Rechnung noch offen ist. Wir bitten Sie, den Betrag bis {frist} zu begleichen. Sollte sich Ihre Zahlung mit diesem Schreiben gekreuzt haben, betrachten Sie es bitte als gegenstandslos.' },
-      { title: '1. Mahnung', days: 10, fee: 20,
+      { title: '1. Mahnung', days: 10, fee: 20, interest: true,
         text: 'Trotz unserer Zahlungserinnerung ist die nachstehende Rechnung weiterhin offen. Wir bitten Sie, den Gesamtbetrag inklusive Mahngebühr bis {frist} zu überweisen.' },
-      { title: '2. Mahnung', days: 10, fee: 30,
+      { title: '2. Mahnung', days: 10, fee: 30, interest: true,
         text: 'Leider haben wir auf unsere bisherigen Schreiben keine Zahlung erhalten. Wir fordern Sie letztmals auf, den Gesamtbetrag bis {frist} zu begleichen. Andernfalls sehen wir uns gezwungen, rechtliche Schritte einzuleiten.' },
+    ],
+  },
+  payroll: {
+    // Sätze in Prozent des Bruttolohns – bitte mit den Verfügungen der Ausgleichskasse und der Versicherer abgleichen.
+    employee: [
+      { key: 'ahv', label: 'AHV/IV/EO', rate: 5.3 },
+      { key: 'alv', label: 'ALV', rate: 1.1 },
+      { key: 'nbu', label: 'Nichtberufsunfall (NBU)', rate: 1.2 },
+      { key: 'ktg', label: 'Krankentaggeld (KTG)', rate: 0.5 },
+    ],
+    employer: [
+      { key: 'ahv', label: 'AHV/IV/EO', rate: 5.3 },
+      { key: 'alv', label: 'ALV', rate: 1.1 },
+      { key: 'fak', label: 'Familienausgleichskasse (FAK)', rate: 1.5 },
+      { key: 'bu', label: 'Berufsunfall (BU)', rate: 0.2 },
+      { key: 'ktg', label: 'Krankentaggeld (KTG)', rate: 0.5 },
+      { key: 'vk', label: 'Verwaltungskosten Ausgleichskasse', rate: 0.2 },
     ],
   },
   mail: {
@@ -106,6 +130,7 @@ export const DEFAULTS = {
     creditBody: 'Guten Tag\n\nIm Anhang erhalten Sie unsere Gutschrift {nummer} über {waehrung} {total}.\n\nFreundliche Grüsse\n{firma}',
     dunningSubject: '{titel} zu Rechnung {nummer}',
     dunningBody: 'Guten Tag\n\nIm Anhang erhalten Sie unsere {titel} zur Rechnung {nummer}. Der offene Betrag beträgt {waehrung} {total}.\n\nFreundliche Grüsse\n{firma}',
+    payslipSubject: 'Lohnabrechnung {periode}',
     purchaseSubject: 'Bestellung {nummer}',
     purchaseBody: 'Guten Tag\n\nIm Anhang erhalten Sie unsere Bestellung {nummer}. Bitte bestätigen Sie uns den Liefertermin.\n\nFreundliche Grüsse\n{firma}',
   },

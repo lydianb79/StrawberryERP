@@ -121,3 +121,52 @@ test('Migrationen sind lückenlos und aufsteigend nummeriert', () => {
   assert.deepEqual(MIGRATIONS.map((m) => m.version), MIGRATIONS.map((_, i) => i + 2));
   for (const m of MIGRATIONS) assert.ok(m.name && m.statements.length > 0);
 });
+
+test('Überwachung: Statuswechsel lösen Meldungen aus, Dauerstörungen nur einmal täglich', async () => {
+  const { diff, checks } = await import('../src/monitor.js');
+  const ok = { service: { ok: true }, backup: { ok: true } };
+  const down = { service: { ok: false }, backup: { ok: true } };
+  const now = Date.now();
+  assert.equal(diff(null, ok, now).notify, false, 'alles in Ordnung: keine Meldung');
+  const first = diff({ failing: [] }, down, now);
+  assert.deepEqual([first.notify, first.started], [true, ['service']]);
+  assert.equal(diff({ failing: ['service'], notifiedAt: now - 3600_000 }, down, now).notify, false, 'gleiche Störung: nicht erneut');
+  assert.equal(diff({ failing: ['service'], notifiedAt: now - 25 * 3600_000 }, down, now).remind, true, 'nach einem Tag erinnern');
+  const fixed = diff({ failing: ['service'], notifiedAt: now }, ok, now);
+  assert.deepEqual([fixed.notify, fixed.resolved], [true, ['service']]);
+
+  const time = new Date(now - 2 * 3600_000).toISOString();
+  assert.equal(checks.backup({ now, status: { ok: true, time, size: 100 } }).ok, true);
+  assert.equal(checks.backup({ now, status: { ok: true, time: new Date(now - 30 * 3600_000).toISOString() } }).ok, false, 'zu alte Sicherung');
+  assert.equal(checks.backup({ now, status: { ok: false, time, message: 'kaputt' } }).ok, false);
+  assert.equal(checks.backup({ now, status: null }).ok, false);
+  assert.equal(checks.disk({ paths: ['/x'], statfs: () => ({ bavail: 5, blocks: 100 }) }).ok, false, '95 % belegt');
+  assert.equal(checks.disk({ paths: ['/x'], statfs: () => ({ bavail: 50, blocks: 100 }) }).ok, true);
+  assert.equal(checks.units({ run: () => 'active' }).ok, true);
+  assert.equal(checks.units({ run: (u) => (u === 'nginx' ? 'failed' : 'active') }).ok, false);
+  assert.equal(checks.units({ run: () => { const e = new Error('x'); e.code = 'ENOENT'; throw e; } }), null, 'ohne systemd nicht anwendbar');
+});
+
+test('Lohnberechnung: Abzüge auf 5 Rappen, Spesen ohne Beiträge', async () => {
+  const { computePayslip } = await import('../src/services/payroll.js');
+  const rates = { employee: [{ key: 'ahv', label: 'AHV', rate: 5.3 }, { key: 'alv', label: 'ALV', rate: 1.1 }], employer: [{ key: 'ahv', label: 'AHV', rate: 5.3 }] };
+  const s = computePayslip({ monthly_gross: 5432.1, bvg_employee: 211.35, bvg_employer: 0 }, rates, { bonus: 0, expenses: 80 });
+  assert.deepEqual(s.deductions.map((d) => d.amount), [287.9, 59.75, 211.35]);
+  assert.equal(s.net, 5432.1 - 287.9 - 59.75 - 211.35 + 80);
+  assert.equal(s.employer_total, 287.9);
+  assert.equal(computePayslip({ monthly_gross: 0, bvg_employee: 0, bvg_employer: 0 }, rates).net, 0);
+});
+
+test('Zahlungsdatei: Prüfungen und Zeichenbereinigung', async () => {
+  const { buildPain001 } = await import('../src/services/pain001.js');
+  const debtor = { name: 'Firma AG', iban: 'CH9300762011623852957' };
+  const pay = { id: 1, name: 'Bäckerei Hug', city: 'Zürich', country: 'Schweiz', iban: 'CH5604835012345678009', amount: 10.5, currency: 'CHF', message: 'Rechnung <1>' };
+  const f = buildPain001(debtor, [pay, { ...pay, id: 2, currency: 'EUR', amount: 20 }], { date: '2030-01-01', msgId: 'TEST1' });
+  assert.equal(f.total, 30.5);
+  assert.equal((f.xml.match(/<PmtInf>/g) || []).length, 2, 'ein Block je Währung');
+  assert.ok(f.xml.includes('<Nm>Baeckerei Hug</Nm>') && f.xml.includes('<Ustrd>Rechnung 1</Ustrd>'));
+  assert.throws(() => buildPain001(debtor, [{ ...pay, iban: 'CH00' }], { date: '2030-01-01' }), /IBAN/);
+  assert.throws(() => buildPain001(debtor, [{ ...pay, currency: 'USD' }], { date: '2030-01-01' }), /CHF und EUR/);
+  assert.throws(() => buildPain001({ name: 'x', iban: '' }, [pay], { date: '2030-01-01' }), /IBAN/);
+  assert.throws(() => buildPain001(debtor, [], { date: '2030-01-01' }));
+});

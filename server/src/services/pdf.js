@@ -33,7 +33,7 @@ export function renderDocumentPdf({ doc, items, customer, settings, logo }, stre
   const T = labelsFor(lang);
   const label = doc.title || T.doc[doc.type] || TYPES[doc.type].label;
   const cur = doc.currency || c.currency || 'CHF';
-  const title = `${label} ${doc.number || `(${T.draft})`}`;
+  const title = doc.titleOnly ? label : `${label} ${doc.number || `(${T.draft})`}`;
 
   const pdf = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true, info: { Title: title, Author: c.name } });
   pdf.pipe(stream);
@@ -76,10 +76,11 @@ export function renderDocumentPdf({ doc, items, customer, settings, logo }, stre
 
   const meta = [
     [T.date, date(doc.date)],
-    [T.no[doc.type], doc.number || T.draft],
-    [doc.type === 'purchase' ? T.supplierNo : T.customerNo, customer.number],
+    doc.titleOnly ? null : [T.no[doc.type], doc.number || T.draft],
+    [doc.partnerLabel || (doc.type === 'purchase' ? T.supplierNo : T.customerNo), customer.number],
     doc.type === 'purchase' && doc.due_date ? [T.deliveryDate, date(doc.due_date)] : null,
     doc.type === 'invoice' && doc.due_date ? [T.payableUntil, date(doc.due_date)] : null,
+    ...(doc.extraMeta || []),
     doc.type === 'quote' && doc.valid_until ? [T.validUntil, date(doc.valid_until)] : null,
     doc.reference ? [T.reference, doc.reference] : null,
     c.vat_no ? [T.vatNo, c.vat_no] : null,
@@ -185,13 +186,13 @@ export function renderDocumentPdf({ doc, items, customer, settings, logo }, stre
   if (tpl === 'modern') {
     pdf.rect(tx - 8, y - 4, tw + 8, 24).fill(accent);
     pdf.font(FB).fontSize(11).fillColor('#ffffff');
-    pdf.text(`${T.total} ${cur}`, tx, y + 3, { width: tw - 90, lineBreak: false });
+    pdf.text(`${doc.totalLabel || T.total} ${cur}`, tx, y + 3, { width: tw - 90, lineBreak: false });
     pdf.text(money(t.total), R - 90, y + 3, { width: 90 - PADX, align: 'right', lineBreak: false });
     y += 30;
   } else {
     pdf.moveTo(tx, y - 3).lineTo(R, y - 3).lineWidth(0.9).strokeColor(tpl === 'classic' ? accent : INK).stroke();
     y += 3;
-    sumRow(`${T.total} ${cur}`, money(t.total), true);
+    sumRow(`${doc.totalLabel || T.total} ${cur}`, money(t.total), true);
     pdf.moveTo(tx, y - 2).lineTo(R, y - 2).lineWidth(0.9).strokeColor(tpl === 'classic' ? accent : INK).stroke();
     y += 8;
   }
@@ -206,9 +207,9 @@ export function renderDocumentPdf({ doc, items, customer, settings, logo }, stre
     y = pdf.y + 8;
   }
   // QR-Zahlteil (Swiss QR Bill) für gebuchte Rechnungen
-  const qr = doc.type === 'invoice' && layout.showQrBill && doc.number && doc.status !== 'cancelled'
+  const qr = doc.type === 'invoice' && layout.showQrBill && doc.number && doc.status !== 'cancelled' && !doc.noQr
     ? buildQrBill({ doc, partner: customer, company: c, language: lang }).bill : null;
-  if (doc.type === 'invoice' && layout.showBankDetails && c.iban && !qr) {
+  if (doc.type === 'invoice' && layout.showBankDetails && c.iban && !qr && !doc.titleOnly) {
     ensure(50);
     y += 8;
     pdf.font(FB).fontSize(9).fillColor(INK).text(T.bank, L, y);

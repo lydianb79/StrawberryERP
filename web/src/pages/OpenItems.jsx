@@ -5,6 +5,7 @@ import { useAuth } from '../auth.js';
 import { DataTable, Field, Icon, Modal, PageHead, StatusBadge, Tabs, useToast } from '../components/ui.jsx';
 import { PaymentModal } from './DocumentEditor.jsx';
 import { DunningTab, BankingTab } from './Billing.jsx';
+import { Attachments, saveText } from '../components/shared.jsx';
 
 const BUCKETS = [['current', 'Nicht fällig'], ['d30', '1–30 Tage überfällig'], ['d60', '31–60 Tage'], ['d90', 'Über 60 Tage']];
 
@@ -94,27 +95,6 @@ function BillModal({ bill, lookup, rates, base, writable, onClose, onSaved }) {
   const [rate, setRate] = useState(bill.id && bill.net ? '' : rates[0]);
   const cancelled = bill.status === 'cancelled';
   const locked = !writable || cancelled || (bill.id && bill.paid_amount > 0);
-  const [files, setFiles] = useState([]);
-  const fileRef = useRef(null);
-  const loadFiles = useCallback(() => { if (bill.id) api(`/attachments?entity=supplier_invoice&entity_id=${bill.id}`).then(setFiles).catch(() => {}); }, [bill.id]);
-  useEffect(() => { loadFiles(); }, [loadFiles]);
-  const attach = (file) => {
-    if (!file) return;
-    if (file.size > 8 * 1024 * 1024) { toast.error('Die Datei darf höchstens 8 MB gross sein.'); return; }
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        await api('/attachments', { method: 'POST', body: { entity: 'supplier_invoice', entity_id: bill.id, filename: file.name, dataUrl: reader.result } });
-        toast('Beleg abgelegt.');
-        loadFiles();
-      } catch (err) { toast.error(err.message); }
-    };
-    reader.readAsDataURL(file);
-  };
-  const detach = async (f) => {
-    if (!window.confirm(`«${f.filename}» entfernen?`)) return;
-    try { await api(`/attachments/${f.id}`, { method: 'DELETE' }); loadFiles(); } catch (err) { toast.error(err.message); }
-  };
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const setNet = (net, r = rate) => set({ net, ...(r !== '' ? { vat: round2(Number(net) * Number(r) / 100) } : {}) });
   const accounts = lookup.accounts.filter((a) => a.type === 'expense' || a.type === 'asset');
@@ -209,22 +189,7 @@ function BillModal({ bill, lookup, rates, base, writable, onClose, onSaved }) {
             </tbody>
           </table>
         )}
-        {bill.id && (
-          <div style={{ marginTop: 16 }}>
-            <div className="row"><h3>Belegablage</h3><div className="spacer" />
-              <input ref={fileRef} type="file" accept="application/pdf,image/png,image/jpeg" hidden onChange={(e) => { attach(e.target.files[0]); e.target.value = ''; }} />
-              {writable && <button type="button" className="btn sm" onClick={() => fileRef.current.click()}><Icon name="clip" /> Datei anhängen</button>}
-            </div>
-            {files.length ? files.map((f) => (
-              <div className="row" key={f.id} style={{ padding: '5px 0' }}>
-                <a href={`/api/attachments/${f.id}`} target="_blank" rel="noreferrer"><Icon name="pdf" /> {f.filename}</a>
-                <span className="muted small">{Math.max(1, Math.round(f.size / 1024))} KB · {fmtDate(f.created_at)} · {f.user_name}</span>
-                <div className="spacer" />
-                {writable && <button type="button" className="icon-btn danger" title="Entfernen" onClick={() => detach(f)}><Icon name="trash" /></button>}
-              </div>
-            )) : <p className="muted small" style={{ margin: '6px 0 0' }}>Noch kein Beleg abgelegt (PDF, PNG oder JPEG, max. 8 MB).</p>}
-          </div>
-        )}
+        {bill.id && <div style={{ marginTop: 16 }}><Attachments entity="supplier_invoice" entityId={bill.id} writable={writable} /></div>}
         <div className="row" style={{ marginTop: 20 }}>
           {bill.id && !locked && <button type="button" className="btn danger" onClick={remove}><Icon name="undo" /> Stornieren</button>}
           <div className="spacer" />
@@ -246,6 +211,17 @@ export function Payables() {
   const [lookup, setLookup] = useState(null);
   const [editing, setEditing] = useState(null);
   const [paying, setPaying] = useState(null);
+  const [picked, setPicked] = useState(new Set());
+  const toggle = (id) => setPicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const paymentFile = async () => {
+    try {
+      const f = await api('/payables-payment-file', { method: 'POST', body: { invoice_ids: [...picked] } });
+      saveText(f.filename, f.xml);
+      toast(`Zahlungsdatei mit ${f.count} Zahlungen erstellt (Total ${money(f.total)}). Bitte im E-Banking hochladen; die Zahlungen danach hier verbuchen.`);
+      setPicked(new Set());
+      load();
+    } catch (err) { toast.error(err.message); }
+  };
 
   const load = useCallback(() => {
     api(`/payables${tab === 'open' ? '?open=1' : ''}`).then(setRows).catch((e) => { setRows([]); toast.error(e.message); });
@@ -259,7 +235,8 @@ export function Payables() {
   };
 
   const columns = [
-    { key: 'number', label: 'Rechnungs-Nr.', render: (r) => <b>{r.number}</b> },
+    { key: '_actions', label: '', render: (r) => writable && ['open', 'partial'].includes(r.status) && <input type="checkbox" checked={picked.has(r.id)} onChange={() => toggle(r.id)} title="Für die Zahlungsdatei auswählen" /> },
+    { key: 'number', label: 'Rechnungs-Nr.', render: (r) => <><b>{r.number}</b>{r.payment_exported_at && ['open', 'partial'].includes(r.status) && <div className="muted small">in Zahlungsdatei {fmtDate(r.payment_exported_at)}</div>}</> },
     { key: 'supplier_name', label: 'Lieferant' },
     { key: 'description', label: 'Beschreibung' },
     { key: 'date', label: 'Datum', render: (r) => fmtDate(r.date), csv: (r) => fmtDate(r.date) },
@@ -270,12 +247,13 @@ export function Payables() {
     { key: 'open', label: 'Offen', num: true, render: (r) => money(r.total - r.paid_amount), csv: (r) => r.total - r.paid_amount },
     { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} overdue={!!r.overdue} /> },
     { key: 'attachment_count', label: '', render: (r) => (r.attachment_count ? <span title="Beleg abgelegt" className="muted"><Icon name="clip" /></span> : null) },
-    { key: '_actions', label: '', render: (r) => writable && ['open', 'partial'].includes(r.status) && <button className="btn sm" onClick={() => setPaying(r)}><Icon name="out" /> Zahlen</button> },
+    { key: 'pay', label: '', render: (r) => writable && ['open', 'partial'].includes(r.status) && <button className="btn sm" onClick={(e) => { e.stopPropagation(); setPaying(r); }}><Icon name="out" /> Zahlen</button> },
   ];
 
   return (
     <div className="stack">
       <PageHead title="Kreditoren" subtitle="Lieferantenrechnungen erfassen, verbuchen und bezahlen">
+        {writable && <button className="btn" disabled={!picked.size} onClick={paymentFile} title="Zahlungsdatei (pain.001) für das E-Banking"><Icon name="download" /> Zahlungsdatei ({picked.size})</button>}
         {writable && lookup && <button className="btn primary" onClick={() => setEditing({})}><Icon name="plus" /> Lieferantenrechnung</button>}
       </PageHead>
       {aging && <Aging rows={aging} />}
@@ -284,7 +262,7 @@ export function Payables() {
         <DataTable columns={columns} rows={rows} exportName="kreditoren" onRowClick={open}
           empty={tab === 'open' ? 'Keine offenen Kreditoren.' : 'Noch keine Lieferantenrechnungen erfasst.'}
           footer={(list) => (
-            <tr><td colSpan={7}>Summe in Basiswährung</td><td className="num">{money(list.reduce((s, r) => s + (r.status === 'cancelled' ? 0 : r.base_total), 0))}</td>
+            <tr><td colSpan={8}>Summe in Basiswährung</td><td className="num">{money(list.reduce((s, r) => s + (r.status === 'cancelled' ? 0 : r.base_total), 0))}</td>
               <td className="num">{money(list.reduce((s, r) => s + (r.status === 'cancelled' ? 0 : r.base_open), 0))}</td><td colSpan={3} /></tr>
           )} />
       </div>

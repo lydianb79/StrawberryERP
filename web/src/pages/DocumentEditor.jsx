@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, DOC, fmtDate, fmtDateTime, LANGUAGES, money, priceFor, qty as fmtQty, round2, today } from '../lib.js';
 import { useAuth } from '../auth.js';
-import { Combo, Field, Icon, Modal, PageHead, StatusBadge, useToast } from '../components/ui.jsx';
+import { Field, Icon, Modal, PageHead, StatusBadge, useToast } from '../components/ui.jsx';
+import { Attachments, CrmPanel, EntityCombo } from '../components/shared.jsx';
 
 const emptyItem = (vat) => ({ product_id: '', description: '', qty: 1, unit: 'Stk', unit_price: 0, discount_pct: 0, vat_rate: vat });
 const lineTotal = (it) => round2((Number(it.qty) || 0) * (Number(it.unit_price) || 0) * (1 - (Number(it.discount_pct) || 0) / 100));
@@ -87,11 +88,13 @@ export function MailModal({ title, draftPath, sendPath, onClose, onSent }) {
 /** Mengendialog für Wareneingang, Teillieferung und Teilrechnung. rows: [{ id, label, sub, total, done, unit }] */
 function QtyModal({ title, rows, doneLabel, nowLabel, hint, submitLabel, onClose, onSubmit }) {
   const [qtys, setQtys] = useState(Object.fromEntries(rows.map((r) => [r.id, r3(r.total - r.done)])));
+  const [batches, setBatches] = useState({});
+  const withBatch = rows.some((r) => r.needsBatch);
   return (
     <Modal title={title} onClose={onClose} wide>
-      <form onSubmit={(e) => { e.preventDefault(); onSubmit(rows.map((r) => ({ item_id: r.id, qty: Number(qtys[r.id]) || 0 }))); }}>
+      <form onSubmit={(e) => { e.preventDefault(); onSubmit(rows.map((r) => ({ item_id: r.id, qty: Number(qtys[r.id]) || 0, batch: batches[r.id] || undefined }))); }}>
         <table className="table">
-          <thead><tr><th>Position</th><th className="num">Gesamt</th><th className="num">{doneLabel}</th><th className="num" style={{ width: 150 }}>{nowLabel}</th></tr></thead>
+          <thead><tr><th>Position</th><th className="num">Gesamt</th><th className="num">{doneLabel}</th><th className="num" style={{ width: 130 }}>{nowLabel}</th>{withBatch && <th style={{ width: 170 }}>Charge / Serien-Nr.</th>}</tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id}>
@@ -99,6 +102,7 @@ function QtyModal({ title, rows, doneLabel, nowLabel, hint, submitLabel, onClose
                 <td className="num">{fmtQty(r.total)} {r.unit}</td>
                 <td className="num">{fmtQty(r.done)}</td>
                 <td><input className="input num" type="number" step="any" min="0" max={r3(r.total - r.done)} value={qtys[r.id]} onChange={(e) => setQtys({ ...qtys, [r.id]: e.target.value })} /></td>
+                {withBatch && <td>{r.needsBatch && <input className="input" placeholder="z.B. LOT-2026-11" value={batches[r.id] || ''} onChange={(e) => setBatches({ ...batches, [r.id]: e.target.value })} />}</td>}
               </tr>
             ))}
           </tbody>
@@ -235,32 +239,32 @@ export default function DocumentEditor({ type }) {
     return { subtotal: round2(subtotal), vatLines, total: round2(subtotal + vat) };
   }, [doc?.items]);
 
-  const partnerOptions = useMemo(() => (lookup ? (purchase ? lookup.suppliers : lookup.customers).map((c) => ({ value: c.id, label: c.company, hint: c.number })) : []), [lookup, purchase]);
-  const productOptions = useMemo(() => (lookup ? lookup.products.map((p) => ({ value: p.id, label: `${p.sku} – ${p.name}` })) : []), [lookup]);
 
   const set = (patch) => setDoc((d) => ({ ...d, ...patch }));
   const setItem = (i, patch) => setDoc((d) => ({ ...d, items: d.items.map((it, j) => (j === i ? { ...it, ...patch } : it)) }));
   const rateOf = (code) => (code === base ? 1 : lookup.currencies.find((c) => c.code === code)?.rate ?? 1);
-  const customer = () => lookup.customers.find((c) => String(c.id) === String(doc.customer_id));
+  // Datensatz des gewählten Kunden: aus der Suche übernommen, sonst aus der vorgeladenen Liste
+  const customer = () => doc._partner || lookup.customers.find((c) => String(c.id) === String(doc.customer_id));
   /** Preis gemäss Preisliste (Kundenpreis, Staffel) – nur im Verkauf und in Basiswährung des Artikels. */
-  const salePrice = (p, qty) => priceFor(p, lookup.prices, doc.customer_id, qty);
+  const salePrice = (p, qty) => priceFor(p, p.prices || lookup.prices, doc.customer_id, qty);
   const productItem = (p, qty = 1) => ({ product_id: p.id, description: p.description ? `${p.name}\n${p.description}` : p.name, unit: p.unit,
-    unit_price: purchase ? p.purchase_price : salePrice(p, qty), vat_rate: p.vat_rate, auto_price: !purchase,
+    unit_price: purchase ? p.purchase_price : salePrice(p, qty), vat_rate: p.vat_rate, auto_price: !purchase, sku: p.sku, _product: p,
     ...(purchase ? {} : { discount_pct: customer()?.discount_pct || 0 }) });
-  const pickProduct = (i, productId) => {
-    const p = lookup.products.find((x) => String(x.id) === String(productId));
-    setItem(i, p ? productItem(p, doc.items[i].qty) : { product_id: '', auto_price: false });
+  const pickProduct = (i, productId, row) => {
+    const p = row || lookup.products.find((x) => String(x.id) === String(productId));
+    setItem(i, p && productId ? productItem(p, doc.items[i].qty) : { product_id: '', sku: '', auto_price: false, _product: null });
   };
   const changeQty = (i, value) => {
     const it = doc.items[i];
-    const p = it.auto_price && lookup.products.find((x) => String(x.id) === String(it.product_id));
+    const p = it.auto_price && (it._product || lookup.products.find((x) => String(x.id) === String(it.product_id)));
     setItem(i, p ? { qty: value, unit_price: salePrice(p, value) } : { qty: value });
   };
-  const pickPartner = (value) => {
+  const pickPartner = (value, row) => {
     const list = purchase ? lookup.suppliers : lookup.customers;
-    const partner = list.find((x) => String(x.id) === String(value));
+    const partner = row || list.find((x) => String(x.id) === String(value));
     const currency = partner?.currency || doc.currency;
-    set({ [partnerKey]: value, currency, exchange_rate: rateOf(currency), ...(isNew && partner?.language ? { language: partner.language } : {}) });
+    set({ [partnerKey]: value, partner_name: partner?.company || '', _partner: partner || null, currency, exchange_rate: rateOf(currency),
+      ...(isNew && partner?.language ? { language: partner.language } : {}) });
   };
   const addLowStock = () => {
     const present = new Set(doc.items.map((it) => String(it.product_id)));
@@ -348,9 +352,7 @@ export default function DocumentEditor({ type }) {
   const currencyCodes = [...new Set([base, ...lookup.currencies.map((c) => c.code), doc.currency])];
   const itemRow = (it) => ({ id: it.id, label: <><b>{it.sku}</b> {it.description.split('\n')[0]}</>, total: it.qty, unit: it.unit,
     sub: !it.product_id ? 'Freie Position – ohne Lagerbuchung' : null });
-  const partnerList = purchase ? lookup.suppliers : lookup.customers;
-  const partnerShown = partnerList.some((c) => c.id === doc[partnerKey]) || !doc[partnerKey]
-    ? partnerOptions : [{ value: doc[partnerKey], label: doc.partner_name, hint: doc.partner_number }, ...partnerOptions];
+  const tracked = (productId) => { const p = lookup.products.find((x) => x.id === productId); return !!p && p.tracking !== 'none'; };
 
   return (
     <div className="stack">
@@ -373,6 +375,7 @@ export default function DocumentEditor({ type }) {
         {!isNew && writable && type === 'invoice' && ['open', 'partial', 'paid'].includes(st) && <button className="btn" disabled={busy} onClick={() => convert('credit')}><Icon name="undo" /> Gutschrift</button>}
         {!isNew && writable && type === 'invoice' && ['open', 'partial', 'paid'].includes(st) && <button className="btn" disabled={busy} onClick={() => setModal('recurring')}><Icon name="repeat" /> Als Abo</button>}
         {!isNew && writable && type === 'invoice' && st === 'open' && <button className="btn danger" disabled={busy} onClick={() => action('cancel', null, 'Rechnung storniert.', 'Rechnung stornieren? Es wird eine Gegenbuchung erstellt und der Lagerbestand zurückgebucht.')}>Stornieren</button>}
+        {!isNew && writable && credit && ['open', 'paid'].includes(st) && <button className="btn danger" disabled={busy} onClick={() => action('cancel', null, 'Gutschrift storniert.', 'Gutschrift stornieren?\n\nDie Buchung wird durch eine Gegenbuchung aufgehoben und die Verrechnung mit der Rechnung zurückgenommen.')}>Stornieren</button>}
         {!isNew && writable && purchase && ['ordered', 'partly'].includes(st) && <button className="btn primary" disabled={busy} onClick={() => setModal('receive')}><Icon name="box" /> Wareneingang</button>}
         {!isNew && purchase && ['ordered', 'partly', 'received'].includes(st) && can('payables.write') && <button className="btn" disabled={busy} onClick={() => setModal('bill')}><Icon name="out" /> Lieferantenrechnung</button>}
         {!isNew && writable && purchase && st === 'partly' && <button className="btn" disabled={busy} onClick={() => action('status', { status: 'received' }, 'Bestellung abgeschlossen.', 'Bestellung abschliessen? Die Restmenge wird nicht mehr erwartet.')}>Abschliessen</button>}
@@ -404,7 +407,7 @@ export default function DocumentEditor({ type }) {
         <div className="card-body">
           <div className="form-grid cols-4">
             <Field label={purchase ? 'Lieferant *' : 'Kunde *'} className="span-2">
-              <Combo options={partnerShown} value={doc[partnerKey]} disabled={!editable} placeholder="Name oder Nummer suchen…" onChange={pickPartner} />
+              <EntityCombo kind={purchase ? 'suppliers' : 'customers'} value={doc[partnerKey]} label={doc.partner_name} disabled={!editable} placeholder="Name, Nummer oder Ort suchen…" onPick={pickPartner} />
             </Field>
             <Field label="Datum"><input className="input" type="date" value={doc.date || ''} disabled={!editable} onChange={(e) => set({ date: e.target.value })} /></Field>
             {type === 'invoice' && <Field label="Fällig am" hint={editable ? 'Leer = gemäss Zahlungsfrist' : null}><input className="input" type="date" value={doc.due_date || ''} disabled={!editable} onChange={(e) => set({ due_date: e.target.value })} /></Field>}
@@ -462,7 +465,7 @@ export default function DocumentEditor({ type }) {
             <tbody>
               {doc.items.map((it, i) => (
                 <tr key={i}>
-                  <td><Combo options={productOptions} value={it.product_id || ''} disabled={!editable} placeholder="Freie Position" emptyLabel="Freie Position" onChange={(v) => pickProduct(i, v)} /></td>
+                  <td><EntityCombo kind="products" value={it.product_id || ''} label={it.product_id ? it.sku || 'Artikel' : ''} disabled={!editable} placeholder="Freie Position" emptyLabel="Freie Position" onPick={(v, row) => pickProduct(i, v, row)} /></td>
                   <td><textarea className="input" rows={1} value={it.description || ''} disabled={!editable} onChange={(e) => setItem(i, { description: e.target.value })}
                     style={{ height: Math.max(34, 20 * String(it.description || '').split('\n').length + 14) }} /></td>
                   <td><input className="input num" type="number" step="any" value={it.qty} disabled={!editable} onChange={(e) => changeQty(i, e.target.value)} /></td>
@@ -541,6 +544,18 @@ export default function DocumentEditor({ type }) {
         )}
       </div>
 
+      {!isNew && (
+        <div className="grid-2">
+          <div className="card"><div className="card-body"><Attachments entity="document" entityId={doc.id} writable={writable} /></div></div>
+          {!purchase && (
+            <div className="card">
+              <div className="card-head"><h2>Notizen und Aufgaben</h2></div>
+              <div className="card-body"><CrmPanel documentId={doc.id} users={lookup.users} /></div>
+            </div>
+          )}
+        </div>
+      )}
+
       {modal === 'pay' && (
         <PaymentModal title={credit ? `Guthaben aus ${doc.number} auszahlen` : `Zahlungseingang zu ${doc.number}`} open={open} accounts={lookup.accounts}
           defaultAccount={settings?.accounting?.bank} submitLabel={credit ? 'Auszahlung buchen' : 'Zahlung buchen'}
@@ -557,7 +572,7 @@ export default function DocumentEditor({ type }) {
       {modal === 'receive' && (
         <QtyModal title={`Wareneingang zu ${doc.number}`} doneLabel="Bereits erhalten" nowLabel="Jetzt erhalten" submitLabel="Wareneingang buchen"
           hint="Die Mengen werden als Wareneingang ins Lager gebucht; der Einstandspreis der Artikel wird auf den Bestellpreis nachgeführt."
-          rows={doc.items.filter((it) => it.qty - it.qty_received > 0.0005).map((it) => ({ ...itemRow(it), done: it.qty_received }))}
+          rows={doc.items.filter((it) => it.qty - it.qty_received > 0.0005).map((it) => ({ ...itemRow(it), done: it.qty_received, needsBatch: tracked(it.product_id) }))}
           onClose={() => setModal(null)} onSubmit={async (items) => { if (await action('receive', { items }, 'Wareneingang gebucht.')) setModal(null); }} />
       )}
       {modal === 'deliver' && (

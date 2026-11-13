@@ -7,7 +7,7 @@ export const LABELS = {
     deliveryDate: 'Liefertermin', reference: 'Referenz', vatNo: 'MwSt-Nr.', phone: 'Tel.',
     pos: 'Pos.', sku: 'Art.-Nr.', description: 'Bezeichnung', qty: 'Menge', unit: 'Einh.', price: 'Preis', discount: 'Rabatt', amount: 'Betrag',
     subtotal: 'Zwischensumme', vat: 'MwSt', on: 'auf', total: 'Total', bank: 'Bankverbindung', accountOf: 'Lautend auf', page: 'Seite',
-    dunningInvoice: 'Rechnung {nummer} vom {datum}, fällig am {faellig}', dunningPaid: 'Bereits bezahlt', dunningFees: 'Mahngebühren',
+    dunningInvoice: 'Rechnung {nummer} vom {datum}, fällig am {faellig}', dunningPaid: 'Bereits bezahlt', dunningFees: 'Mahngebühren', dunningInterest: 'Verzugszins', collective: 'Sammelmahnung',
   },
   fr: {
     doc: { quote: 'Offre', order: 'Confirmation de commande', invoice: 'Facture', credit: 'Note de crédit', purchase: 'Commande' },
@@ -16,7 +16,7 @@ export const LABELS = {
     deliveryDate: 'Date de livraison', reference: 'Référence', vatNo: 'N° TVA', phone: 'Tél.',
     pos: 'Pos.', sku: 'N° art.', description: 'Désignation', qty: 'Quantité', unit: 'Unité', price: 'Prix', discount: 'Rabais', amount: 'Montant',
     subtotal: 'Sous-total', vat: 'TVA', on: 'sur', total: 'Total', bank: 'Coordonnées bancaires', accountOf: 'Au nom de', page: 'Page',
-    dunningInvoice: 'Facture {nummer} du {datum}, échue le {faellig}', dunningPaid: 'Déjà payé', dunningFees: 'Frais de rappel',
+    dunningInvoice: 'Facture {nummer} du {datum}, échue le {faellig}', dunningPaid: 'Déjà payé', dunningFees: 'Frais de rappel', dunningInterest: 'Intérêts moratoires', collective: 'Rappel collectif',
     text: {
       quoteIntro: 'Nous vous remercions de votre demande et vous soumettons l’offre suivante :',
       quoteClosing: 'Nous nous réjouissons de votre commande. Cette offre est valable jusqu’au {gueltig}.',
@@ -36,7 +36,7 @@ export const LABELS = {
     deliveryDate: 'Data di consegna', reference: 'Riferimento', vatNo: 'N. IVA', phone: 'Tel.',
     pos: 'Pos.', sku: 'N. art.', description: 'Descrizione', qty: 'Quantità', unit: 'Unità', price: 'Prezzo', discount: 'Sconto', amount: 'Importo',
     subtotal: 'Subtotale', vat: 'IVA', on: 'su', total: 'Totale', bank: 'Coordinate bancarie', accountOf: 'Intestato a', page: 'Pagina',
-    dunningInvoice: 'Fattura {nummer} del {datum}, scaduta il {faellig}', dunningPaid: 'Già pagato', dunningFees: 'Spese di sollecito',
+    dunningInvoice: 'Fattura {nummer} del {datum}, scaduta il {faellig}', dunningPaid: 'Già pagato', dunningFees: 'Spese di sollecito', dunningInterest: 'Interessi di mora', collective: 'Sollecito collettivo',
     text: {
       quoteIntro: 'Vi ringraziamo per la vostra richiesta e vi sottoponiamo la seguente offerta:',
       quoteClosing: 'Saremo lieti di ricevere il vostro ordine. L’offerta è valida fino al {gueltig}.',
@@ -56,7 +56,7 @@ export const LABELS = {
     deliveryDate: 'Delivery date', reference: 'Reference', vatNo: 'VAT no.', phone: 'Phone',
     pos: 'Pos.', sku: 'Item no.', description: 'Description', qty: 'Quantity', unit: 'Unit', price: 'Price', discount: 'Discount', amount: 'Amount',
     subtotal: 'Subtotal', vat: 'VAT', on: 'on', total: 'Total', bank: 'Bank details', accountOf: 'Account holder', page: 'Page',
-    dunningInvoice: 'Invoice {nummer} dated {datum}, due {faellig}', dunningPaid: 'Already paid', dunningFees: 'Reminder fees',
+    dunningInvoice: 'Invoice {nummer} dated {datum}, due {faellig}', dunningPaid: 'Already paid', dunningFees: 'Reminder fees', dunningInterest: 'Default interest', collective: 'Collective reminder',
     text: {
       quoteIntro: 'Thank you for your enquiry. We are pleased to submit the following quotation:',
       quoteClosing: 'We look forward to receiving your order. This quotation is valid until {gueltig}.',

@@ -15,6 +15,15 @@ BACKUP_DIR="${BACKUP_DIR:-$(get BACKUP_DIR)}"; BACKUP_DIR="${BACKUP_DIR:-/var/ba
 KEEP_DAYS="${BACKUP_KEEP_DAYS:-$(get BACKUP_KEEP_DAYS)}"; KEEP_DAYS="${KEEP_DAYS:-30}"
 RSYNC_TARGET="${BACKUP_RSYNC_TARGET:-$(get BACKUP_RSYNC_TARGET)}"
 
+STATUS_DIR=/var/lib/strawberryerp
+# Ergebnis für die Überwachung festhalten – auch bei einem Abbruch
+report() {
+  mkdir -p "$STATUS_DIR" && chmod 755 "$STATUS_DIR"
+  printf '{"ok": %s, "time": "%s", "file": "%s", "size": %s, "message": "%s"}\n' "$1" "$(date -Iseconds)" "${2:-}" "${3:-0}" "${4:-}" > "$STATUS_DIR/backup-status.json"
+  chmod 644 "$STATUS_DIR/backup-status.json"
+}
+trap 'code=$?; [ $code -ne 0 ] && report false "" 0 "Sicherung abgebrochen (Exit-Code $code)"' EXIT
+
 mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR"
 FILE="$BACKUP_DIR/strawberryerp-$(date +%F-%H%M%S).sql.gz"
 MYSQL_PWD="$(get DB_PASSWORD)" mysqldump --single-transaction --no-tablespaces --routines \
@@ -35,4 +44,5 @@ if [ -n "$RSYNC_TARGET" ]; then
   rsync -a --timeout=60 "$FILE" "$RSYNC_TARGET" || { echo "Kopie nach $RSYNC_TARGET fehlgeschlagen." >&2; exit 1; }
   echo "Kopie abgelegt: $RSYNC_TARGET"
 fi
+report true "$FILE" "$(stat -c %s "$FILE")" ""
 echo "Backup erstellt: $FILE"

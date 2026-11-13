@@ -3,8 +3,9 @@ import { q, one } from '../db.js';
 import { HttpError, round2, addDays, needDate } from '../util.js';
 import { getSettings } from './settings.js';
 import { postEntry, reverseEntry, accountIdByNumber } from './ledger.js';
+import { unitValueSql } from './stock.js';
 
-async function accountBalance(conn, accountId, date) {
+export async function accountBalance(conn, accountId, date) {
   const row = await one(
     `SELECT COALESCE(SUM(l.debit - l.credit), 0) AS balance FROM journal_lines l JOIN journal_entries e ON e.id = l.entry_id
        JOIN fiscal_years y ON y.id = e.fiscal_year_id WHERE l.account_id = ? AND ? BETWEEN y.start_date AND y.end_date AND e.date <= ?`,
@@ -14,12 +15,12 @@ async function accountBalance(conn, accountId, date) {
 
 /** Vergleicht den Lagerwert laut Lagerbuchhaltung mit dem Bilanzkonto Vorräte. */
 export async function stockValuation(conn, date) {
-  const { accounting } = await getSettings(conn);
+  const { accounting, company } = await getSettings(conn);
   const inventoryId = await accountIdByNumber(conn, accounting.inventory);
-  const stock = await one('SELECT COALESCE(SUM(stock_qty * purchase_price), 0) AS value FROM products WHERE is_stock_item = 1 AND active = 1', [], conn);
+  const stock = await one(`SELECT COALESCE(SUM(stock_qty * ${unitValueSql(company.stock_valuation)}), 0) AS value FROM products WHERE is_stock_item = 1 AND active = 1`, [], conn);
   const booked = await accountBalance(conn, inventoryId, date);
   const value = round2(stock.value);
-  return { date, stockValue: value, booked, difference: round2(value - booked), account: accounting.inventory, changeAccount: accounting.inventoryChange };
+  return { date, method: company.stock_valuation === 'average' ? 'average' : 'last', stockValue: value, booked, difference: round2(value - booked), account: accounting.inventory, changeAccount: accounting.inventoryChange };
 }
 
 /** Bucht die Bestandesänderung, sodass das Konto Vorräte dem Lagerwert entspricht. */

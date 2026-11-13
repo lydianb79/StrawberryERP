@@ -1,0 +1,13 @@
+[Unit]
+Description=StrawberryERP – Überwachung (Dienst, Datensicherung, Speicherplatz, Zertifikat)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=strawberry
+Group=strawberry
+WorkingDirectory=/opt/strawberryerp/server
+EnvironmentFile=/etc/strawberryerp.env
+ExecStart=/usr/bin/node src/monitor.js
+# Exit-Code 2 bedeutet «Störung festgestellt» und ist kein Fehler der Überwachung selbst
+SuccessExitStatus=2

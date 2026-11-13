@@ -34,6 +34,11 @@ export const PERMISSIONS = [
   { key: 'accounting.close', group: 'Buchhaltung', label: 'Jahresabschluss durchführen' },
   { key: 'reports.read', group: 'Auswertungen', label: 'Reports & Kennzahlen ansehen' },
   { key: 'banking.import', group: 'Debitoren', label: 'Kontoauszüge einlesen und Zahlungen zuordnen' },
+  { key: 'projects.read', group: 'Projekte', label: 'Projekte und Zeiten ansehen' },
+  { key: 'projects.write', group: 'Projekte', label: 'Projekte verwalten und abrechnen' },
+  { key: 'time.write', group: 'Projekte', label: 'Eigene Arbeitszeit erfassen' },
+  { key: 'payroll.read', group: 'Lohn', label: 'Mitarbeitende und Lohnläufe ansehen' },
+  { key: 'payroll.write', group: 'Lohn', label: 'Lohnläufe erstellen, buchen und auszahlen' },
   { key: 'admin.users', group: 'Administration', label: 'Benutzer & Rollen verwalten' },
   { key: 'admin.settings', group: 'Administration', label: 'Firmendaten, Layout & Protokoll' },
 ];

@@ -38,7 +38,10 @@ test('Zwei-Faktor-Anmeldung: einrichten, anmelden, zurücksetzen', async () => {
   assert.ok(setup.url.startsWith('otpauth://totp/'));
   assert.ok(setup.qr.startsWith('data:image/svg+xml;base64,'));
   await s.fails(400, 'POST', '/auth/2fa/enable', { code: '000000' });
-  await s.post('/auth/2fa/enable', { code: totp(setup.secret) });
+  const enabled = await s.post('/auth/2fa/enable', { code: totp(setup.secret) });
+  assert.equal(enabled.recoveryCodes.length, 10);
+  assert.match(enabled.recoveryCodes[0], /^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+  assert.deepEqual(await s.get('/auth/2fa/recovery-codes'), { total: 10, unused: 10 });
   assert.equal((await s.get('/auth/me')).totp_enabled, 1);
   await s.fails(400, 'POST', '/auth/2fa/setup');
 
@@ -51,6 +54,17 @@ test('Zwei-Faktor-Anmeldung: einrichten, anmelden, zurücksetzen', async () => {
   await anon.fails(401, 'POST', '/auth/login', { email: u.email, password: 'falsch', code: totp(setup.secret) });
   const ok = await anon.req('POST', '/auth/login', { email: u.email, password: u.password, code: totp(setup.secret) });
   assert.equal(ok.status, 200);
+
+  // Wiederherstellungscode ersetzt den Code aus der App – genau einmal
+  const code = enabled.recoveryCodes[3];
+  assert.equal((await new Client().req('POST', '/auth/login', { email: u.email, password: u.password, code: code.toLowerCase() })).status, 200);
+  assert.equal((await new Client().req('POST', '/auth/login', { email: u.email, password: u.password, code })).status, 401, 'kein zweites Mal');
+  assert.deepEqual(await s.get('/auth/2fa/recovery-codes'), { total: 10, unused: 9 });
+  await s.fails(400, 'POST', '/auth/2fa/recovery-codes', { password: 'falsch' });
+  const fresh = await s.post('/auth/2fa/recovery-codes', { password: u.password });
+  assert.equal(fresh.recoveryCodes.length, 10);
+  assert.equal((await new Client().req('POST', '/auth/login', { email: u.email, password: u.password, code: enabled.recoveryCodes[5] })).status, 401, 'alte Codes verfallen');
+  assert.equal((await new Client().req('POST', '/auth/login', { email: u.email, password: u.password, code: fresh.recoveryCodes[0] })).status, 200);
 
   await s.fails(400, 'POST', '/auth/2fa/disable', { password: 'falsch' });
   // Gerät verloren: Administrator setzt den zweiten Faktor zurück

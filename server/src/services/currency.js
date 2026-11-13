@@ -10,13 +10,16 @@ export async function baseCurrency(conn) {
  * Ermittelt Währung und Kurs eines Belegs.
  * Kurs = Wert einer Einheit Fremdwährung in Basiswährung (z.B. 1 EUR = 0.95 CHF).
  */
-export async function resolveCurrency(conn, requested, requestedRate, fallback) {
+export async function resolveCurrency(conn, requested, requestedRate, fallback, date = null) {
   const base = await baseCurrency(conn);
   const code = String(requested || fallback || base).toUpperCase();
   if (code === base) return { currency: base, exchange_rate: 1, base };
   const cur = await one('SELECT code, rate FROM currencies WHERE code = ?', [code], conn);
   if (!cur) throw new HttpError(400, `Die Währung ${code} ist nicht erfasst (Administration → Währungen).`);
-  const rate = Number(requestedRate) > 0 ? Number(requestedRate) : cur.rate;
+  // Ohne Vorgabe gilt der Kurs, der am Belegdatum gültig war (Kurshistorie), sonst der aktuelle Kurs
+  const past = date && !(Number(requestedRate) > 0)
+    ? await one('SELECT rate FROM currency_rates WHERE code = ? AND date <= ? ORDER BY date DESC LIMIT 1', [code, date], conn) : null;
+  const rate = Number(requestedRate) > 0 ? Number(requestedRate) : past?.rate ?? cur.rate;
   if (!(rate > 0)) throw new HttpError(400, `Für ${code} ist kein gültiger Kurs hinterlegt.`);
   return { currency: code, exchange_rate: Math.round(rate * 1e6) / 1e6, base };
 }

@@ -15,7 +15,13 @@ export default function CrudPage({ title, subtitle, endpoint, writePerm, columns
   const [busy, setBusy] = useState(false);
   const writable = can(writePerm);
 
-  const load = useCallback(() => api(endpoint).then(setRows).catch((e) => { setRows([]); toast.error(e.message); }), [endpoint, toast]);
+  // Listen kommen seitenweise vom Server – so bleiben auch sehr grosse Stammdaten schnell
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [search, setSearch] = useState('');
+  const sep = endpoint.includes('?') ? '&' : '?';
+  const load = useCallback(() => api(`${endpoint}${sep}page=${page}&pageSize=50${search ? `&q=${encodeURIComponent(search)}` : ''}`)
+    .then((data) => { setRows(data.rows); setTotal(data.total); }).catch((e) => { setRows([]); toast.error(e.message); }), [endpoint, sep, page, search, toast]);
   useEffect(() => { load(); }, [load]);
 
   const save = async (e) => {
@@ -50,7 +56,9 @@ export default function CrudPage({ title, subtitle, endpoint, writePerm, columns
         {writable && headerActions}
         {writable && <button className="btn primary" onClick={() => setEditing({ ...defaults })}><Icon name="plus" /> {newLabel}</button>}
       </PageHead>
-      <DataTable columns={cols} rows={rows} exportName={exportName} onRowClick={(row) => setEditing({ ...row })} />
+      <DataTable columns={cols} rows={rows} exportName={exportName} onRowClick={(row) => setEditing({ ...row })}
+        paging={{ page, pageSize: 50, total, onPage: setPage }} onSearch={(t) => { setSearch(t); setPage(0); }}
+        onExport={() => api(`${endpoint}${search ? `${sep}q=${encodeURIComponent(search)}` : ''}`)} />
       {editing && (
         <Modal title={editing.id ? `${title}: bearbeiten` : newLabel} onClose={() => setEditing(null)} wide={fields.length > 8}>
           <form onSubmit={save}>
