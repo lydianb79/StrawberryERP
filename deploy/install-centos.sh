@@ -24,8 +24,14 @@ if [ "$NODE_MAJOR" -lt 22 ]; then
   exit 1
 fi
 
-echo "==> MySQL starten"
-systemctl enable --now mysqld
+echo "==> MySQL starten (nur lokal erreichbar)"
+cat > /etc/my.cnf.d/strawberryerp.cnf <<'CNF'
+[mysqld]
+bind-address = 127.0.0.1
+mysqlx = OFF
+CNF
+systemctl enable mysqld
+systemctl restart mysqld
 
 echo "==> Konfiguration ($ENV_FILE)"
 if [ ! -f "$ENV_FILE" ]; then
