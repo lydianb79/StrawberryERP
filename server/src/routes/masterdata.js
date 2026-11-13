@@ -8,12 +8,12 @@ import { moveStock } from '../services/stock.js';
 
 const partnerFields = {
   number: 's', company: 's', contact_name: 's', email: 's', phone: 's', street: 's', zip: 's', city: 's',
-  country: 's', vat_no: 's', payment_terms_days: 'n', notes: 's', active: 'b', currency: 's',
+  country: 's', vat_no: 's', payment_terms_days: 'n', notes: 's', active: 'b', currency: 's', language: 's',
 };
 const partnerSearch = ['company', 'number', 'contact_name', 'city', 'email'];
 
 export const customers = crudRouter({
-  table: 'customers', entity: 'customer', perm: 'customers', fields: partnerFields, required: ['company'],
+  table: 'customers', entity: 'customer', perm: 'customers', fields: { ...partnerFields, discount_pct: 'n' }, required: ['company'],
   search: partnerSearch, orderBy: 'company',
   autoNumber: { field: 'number', generate: (conn) => partnerNumber(conn, 'customer', 'K') },
 });

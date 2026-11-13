@@ -43,7 +43,7 @@ export async function paymentReference(conn, doc) {
  * Erstellt den QR-Zahlteil für eine gebuchte Rechnung – oder null mit Begründung,
  * wenn die Voraussetzungen fehlen (IBAN, Währung CHF/EUR, Adressen).
  */
-export function buildQrBill({ doc, partner, company }) {
+export function buildQrBill({ doc, partner, company, language = 'de' }) {
   const iban = cleanIban(company.iban);
   if (!iban) return { bill: null, reason: 'Keine IBAN in den Firmendaten hinterlegt.' };
   if (!isIBANValid(iban)) return { bill: null, reason: 'Die IBAN in den Firmendaten ist ungültig.' };
@@ -62,8 +62,8 @@ export function buildQrBill({ doc, partner, company }) {
         country: countryCode(partner.country),
       },
       reference: referenceFor(iban, { id: doc.id, number: doc.number, customer_number: partner.number }),
-      message: `Rechnung ${doc.number}`,
-    }, { language: 'DE' });
+      message: doc.number,
+    }, { language: { fr: 'FR', it: 'IT', en: 'EN' }[language] || 'DE' });
     return { bill, reason: null };
   } catch (err) {
     return { bill: null, reason: `QR-Zahlteil nicht möglich: ${err.message}` };

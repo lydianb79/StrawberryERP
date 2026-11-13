@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, fmtDate, money, round2, today } from '../lib.js';
 import { useAuth } from '../auth.js';
 import { DataTable, Field, Icon, Modal, PageHead, StatusBadge, Tabs, useToast } from '../components/ui.jsx';
 import { PaymentModal } from './DocumentEditor.jsx';
+import { DunningTab, BankingTab } from './Billing.jsx';
 
 const BUCKETS = [['current', 'Nicht fällig'], ['d30', '1–30 Tage überfällig'], ['d60', '31–60 Tage'], ['d90', 'Über 60 Tage']];
 
@@ -24,6 +25,7 @@ const openColumns = (linkTo) => [
   { key: 'date', label: 'Datum', render: (r) => fmtDate(r.date), csv: (r) => fmtDate(r.date) },
   { key: 'due_date', label: 'Fällig', render: (r) => fmtDate(r.due_date), csv: (r) => fmtDate(r.due_date) },
   { key: 'days_overdue', label: 'Tage überfällig', num: true, render: (r) => (r.days_overdue > 0 ? <span className="neg">{r.days_overdue}</span> : '–') },
+  { key: 'dunning_level', label: 'Mahnstufe', num: true, render: (r) => r.dunning_level || '' },
   { key: 'currency', label: 'Whg.' },
   { key: 'total', label: 'Betrag', num: true, render: (r) => money(r.total) },
   { key: 'paid_amount', label: 'Bezahlt', num: true, render: (r) => money(r.paid_amount) },
@@ -33,7 +35,7 @@ const openColumns = (linkTo) => [
 
 const openFooter = (list) => (
   <tr>
-    <td colSpan={9}>Total offene Posten in Basiswährung</td>
+    <td colSpan={10}>Total offene Posten in Basiswährung</td>
     <td className="num">{money(list.reduce((s, r) => s + r.base_open, 0))}</td>
     <td />
   </tr>
@@ -46,6 +48,7 @@ export function Receivables() {
   const [rows, setRows] = useState(null);
   const [accounts, setAccounts] = useState([]);
   const [paying, setPaying] = useState(null);
+  const [tab, setTab] = useState('open');
 
   const load = useCallback(() => api('/reports/receivables').then(setRows).catch((e) => { setRows([]); toast.error(e.message); }), [toast]);
   useEffect(() => { load(); api('/reports/lookup').then((l) => setAccounts(l.accounts)).catch(() => {}); }, [load]);
@@ -57,9 +60,13 @@ export function Receivables() {
 
   return (
     <div className="stack">
-      <PageHead title="Debitoren" subtitle="Offene Kundenrechnungen und Zahlungseingänge" />
-      {rows && <Aging rows={rows} />}
-      <DataTable columns={columns} rows={rows} exportName="debitoren-offene-posten" empty="Keine offenen Debitoren – alle Rechnungen sind bezahlt." footer={openFooter} />
+      <PageHead title="Debitoren" subtitle="Offene Kundenrechnungen, Mahnwesen und Zahlungsabgleich" />
+      <Tabs value={tab} onChange={(t) => { setTab(t); if (t === 'open') load(); }}
+        tabs={[['open', 'Offene Posten'], ['dunning', 'Mahnwesen'], ...(can('banking.import') ? [['banking', 'Zahlungsabgleich']] : [])]} />
+      {tab === 'dunning' && <DunningTab />}
+      {tab === 'banking' && <BankingTab />}
+      {tab === 'open' && rows && <Aging rows={rows} />}
+      {tab === 'open' && <DataTable columns={columns} rows={rows} exportName="debitoren-offene-posten" empty="Keine offenen Debitoren – alle Rechnungen sind bezahlt." footer={openFooter} />}
       {paying && (
         <PaymentModal title={`Zahlungseingang zu ${paying.number} – ${paying.partner}`} open={paying.open_amount} accounts={accounts}
           currency={paying.currency} baseCurrency={settings?.company?.currency || 'CHF'} rate={paying.exchange_rate}
@@ -85,7 +92,29 @@ function BillModal({ bill, lookup, rates, base, writable, onClose, onSaved }) {
     expense_account_id: lookup.accounts.find((a) => a.number === '4200')?.id || '',
   });
   const [rate, setRate] = useState(bill.id && bill.net ? '' : rates[0]);
-  const locked = !writable || (bill.id && bill.paid_amount > 0);
+  const cancelled = bill.status === 'cancelled';
+  const locked = !writable || cancelled || (bill.id && bill.paid_amount > 0);
+  const [files, setFiles] = useState([]);
+  const fileRef = useRef(null);
+  const loadFiles = useCallback(() => { if (bill.id) api(`/attachments?entity=supplier_invoice&entity_id=${bill.id}`).then(setFiles).catch(() => {}); }, [bill.id]);
+  useEffect(() => { loadFiles(); }, [loadFiles]);
+  const attach = (file) => {
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) { toast.error('Die Datei darf höchstens 8 MB gross sein.'); return; }
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        await api('/attachments', { method: 'POST', body: { entity: 'supplier_invoice', entity_id: bill.id, filename: file.name, dataUrl: reader.result } });
+        toast('Beleg abgelegt.');
+        loadFiles();
+      } catch (err) { toast.error(err.message); }
+    };
+    reader.readAsDataURL(file);
+  };
+  const detach = async (f) => {
+    if (!window.confirm(`«${f.filename}» entfernen?`)) return;
+    try { await api(`/attachments/${f.id}`, { method: 'DELETE' }); loadFiles(); } catch (err) { toast.error(err.message); }
+  };
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const setNet = (net, r = rate) => set({ net, ...(r !== '' ? { vat: round2(Number(net) * Number(r) / 100) } : {}) });
   const accounts = lookup.accounts.filter((a) => a.type === 'expense' || a.type === 'asset');
@@ -109,18 +138,19 @@ function BillModal({ bill, lookup, rates, base, writable, onClose, onSaved }) {
     } catch (err) { toast.error(err.message); }
   };
   const remove = async () => {
-    if (!window.confirm('Lieferantenrechnung und zugehörige Buchung löschen?')) return;
-    try { await api(`/payables/${bill.id}`, { method: 'DELETE' }); toast('Gelöscht.'); onSaved(); } catch (err) { toast.error(err.message); }
+    if (!window.confirm('Lieferantenrechnung stornieren?\n\nEs wird eine Gegenbuchung erstellt; der Beleg bleibt als storniert erhalten.')) return;
+    try { await api(`/payables/${bill.id}`, { method: 'DELETE' }); toast('Storniert.'); onSaved(); } catch (err) { toast.error(err.message); }
   };
   const removePayment = async (p) => {
-    if (!window.confirm(`Zahlung über ${money(p.amount)} entfernen?`)) return;
-    try { await api(`/payables/payments/${p.id}`, { method: 'DELETE' }); toast('Zahlung entfernt.'); onSaved(); } catch (err) { toast.error(err.message); }
+    if (!window.confirm(`Zahlung über ${money(p.amount)} stornieren? Es wird eine Gegenbuchung erstellt.`)) return;
+    try { await api(`/payables/payments/${p.id}`, { method: 'DELETE' }); toast('Zahlung storniert.'); onSaved(); } catch (err) { toast.error(err.message); }
   };
 
   return (
     <Modal title={bill.id ? `Lieferantenrechnung ${bill.number}` : 'Lieferantenrechnung erfassen'} onClose={onClose} wide>
       <form onSubmit={submit}>
-        {locked && writable && <div className="alert" style={{ marginBottom: 14 }}>Diese Rechnung hat Zahlungen und kann nicht mehr geändert werden.</div>}
+        {cancelled && <div className="alert error" style={{ marginBottom: 14 }}>Diese Rechnung wurde storniert.</div>}
+        {locked && writable && !cancelled && <div className="alert" style={{ marginBottom: 14 }}>Diese Rechnung hat Zahlungen und kann nicht mehr geändert werden.</div>}
         <div className="form-grid cols-3">
           <Field label="Lieferant *" className="span-2">
             <select className="input" required disabled={locked} value={form.supplier_id} onChange={(e) => pickSupplier(e.target.value)}>
@@ -171,16 +201,32 @@ function BillModal({ bill, lookup, rates, base, writable, onClose, onSaved }) {
             <thead><tr><th>Zahlung vom</th><th>Konto</th><th>Bemerkung</th><th className="num">Betrag</th><th /></tr></thead>
             <tbody>
               {bill.payments.map((p) => (
-                <tr key={p.id}>
-                  <td>{fmtDate(p.date)}</td><td>{p.account_number} {p.account_name}</td><td>{p.note}</td><td className="num">{money(p.amount)}</td>
-                  <td className="actions">{writable && <button type="button" className="icon-btn danger" onClick={() => removePayment(p)}><Icon name="trash" /></button>}</td>
+                <tr key={p.id} className={p.reversed_at ? 'strike' : ''}>
+                  <td>{fmtDate(p.date)}</td><td>{p.account_number} {p.account_name}</td><td>{p.note}{p.reversed_at && ' (storniert)'}</td><td className="num">{money(p.amount)}</td>
+                  <td className="actions">{writable && !p.reversed_at && <button type="button" className="icon-btn danger" title="Zahlung stornieren" onClick={() => removePayment(p)}><Icon name="undo" /></button>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
+        {bill.id && (
+          <div style={{ marginTop: 16 }}>
+            <div className="row"><h3>Belegablage</h3><div className="spacer" />
+              <input ref={fileRef} type="file" accept="application/pdf,image/png,image/jpeg" hidden onChange={(e) => { attach(e.target.files[0]); e.target.value = ''; }} />
+              {writable && <button type="button" className="btn sm" onClick={() => fileRef.current.click()}><Icon name="clip" /> Datei anhängen</button>}
+            </div>
+            {files.length ? files.map((f) => (
+              <div className="row" key={f.id} style={{ padding: '5px 0' }}>
+                <a href={`/api/attachments/${f.id}`} target="_blank" rel="noreferrer"><Icon name="pdf" /> {f.filename}</a>
+                <span className="muted small">{Math.max(1, Math.round(f.size / 1024))} KB · {fmtDate(f.created_at)} · {f.user_name}</span>
+                <div className="spacer" />
+                {writable && <button type="button" className="icon-btn danger" title="Entfernen" onClick={() => detach(f)}><Icon name="trash" /></button>}
+              </div>
+            )) : <p className="muted small" style={{ margin: '6px 0 0' }}>Noch kein Beleg abgelegt (PDF, PNG oder JPEG, max. 8 MB).</p>}
+          </div>
+        )}
         <div className="row" style={{ marginTop: 20 }}>
-          {bill.id && !locked && <button type="button" className="btn danger" onClick={remove}><Icon name="trash" /> Löschen</button>}
+          {bill.id && !locked && <button type="button" className="btn danger" onClick={remove}><Icon name="undo" /> Stornieren</button>}
           <div className="spacer" />
           <button type="button" className="btn" onClick={onClose}>{locked ? 'Schliessen' : 'Abbrechen'}</button>
           {!locked && <button className="btn primary">Speichern &amp; verbuchen</button>}
@@ -223,7 +269,8 @@ export function Payables() {
     { key: 'total', label: 'Brutto', num: true, render: (r) => money(r.total) },
     { key: 'open', label: 'Offen', num: true, render: (r) => money(r.total - r.paid_amount), csv: (r) => r.total - r.paid_amount },
     { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} overdue={!!r.overdue} /> },
-    { key: '_actions', label: '', render: (r) => writable && r.status !== 'paid' && <button className="btn sm" onClick={() => setPaying(r)}><Icon name="out" /> Zahlen</button> },
+    { key: 'attachment_count', label: '', render: (r) => (r.attachment_count ? <span title="Beleg abgelegt" className="muted"><Icon name="clip" /></span> : null) },
+    { key: '_actions', label: '', render: (r) => writable && ['open', 'partial'].includes(r.status) && <button className="btn sm" onClick={() => setPaying(r)}><Icon name="out" /> Zahlen</button> },
   ];
 
   return (
@@ -237,8 +284,8 @@ export function Payables() {
         <DataTable columns={columns} rows={rows} exportName="kreditoren" onRowClick={open}
           empty={tab === 'open' ? 'Keine offenen Kreditoren.' : 'Noch keine Lieferantenrechnungen erfasst.'}
           footer={(list) => (
-            <tr><td colSpan={7}>Summe in Basiswährung</td><td className="num">{money(list.reduce((s, r) => s + r.base_total, 0))}</td>
-              <td className="num">{money(list.reduce((s, r) => s + r.base_open, 0))}</td><td colSpan={2} /></tr>
+            <tr><td colSpan={7}>Summe in Basiswährung</td><td className="num">{money(list.reduce((s, r) => s + (r.status === 'cancelled' ? 0 : r.base_total), 0))}</td>
+              <td className="num">{money(list.reduce((s, r) => s + (r.status === 'cancelled' ? 0 : r.base_open), 0))}</td><td colSpan={3} /></tr>
           )} />
       </div>
       {editing && lookup && (

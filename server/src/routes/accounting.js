@@ -4,6 +4,7 @@ import { can, audit } from '../auth.js';
 import { HttpError, h, needDate, round2 } from '../util.js';
 import { crudRouter } from '../crud.js';
 import * as ledger from '../services/ledger.js';
+import { reversePendingFxValuations } from '../services/closingwork.js';
 
 const r = Router();
 
@@ -40,9 +41,9 @@ r.get('/fiscal-years/:id/close-preview', can('accounting.read'), h(async (req, r
   const income = await ledger.incomeStatement(undefined, fy.id);
   const balance = await ledger.balanceSheet(undefined, fy.id);
   const drafts = await one("SELECT COUNT(*) AS n FROM documents WHERE type = 'invoice' AND status = 'draft' AND date BETWEEN ? AND ?", [fy.start_date, fy.end_date]);
-  const openOrders = await one("SELECT COUNT(*) AS n FROM documents WHERE type = 'order' AND status IN ('open','delivered') AND date BETWEEN ? AND ?", [fy.start_date, fy.end_date]);
-  const receivables = await one("SELECT COUNT(*) AS n, COALESCE(SUM(total - paid_amount), 0) AS amount FROM documents WHERE type = 'invoice' AND status IN ('open','partial') AND date <= ?", [fy.end_date]);
-  const payables = await one("SELECT COUNT(*) AS n, COALESCE(SUM(total - paid_amount), 0) AS amount FROM supplier_invoices WHERE status <> 'paid' AND date <= ?", [fy.end_date]);
+  const openOrders = await one("SELECT COUNT(*) AS n FROM documents WHERE type = 'order' AND status IN ('open','partly','delivered') AND date BETWEEN ? AND ?", [fy.start_date, fy.end_date]);
+  const receivables = await one("SELECT COUNT(*) AS n, COALESCE(SUM((total + dunning_fees - paid_amount) * exchange_rate), 0) AS amount FROM documents WHERE type = 'invoice' AND status IN ('open','partial') AND date <= ?", [fy.end_date]);
+  const payables = await one("SELECT COUNT(*) AS n, COALESCE(SUM((total - paid_amount) * exchange_rate), 0) AS amount FROM supplier_invoices WHERE status IN ('open','partial') AND date <= ?", [fy.end_date]);
   const earlier = await one("SELECT name FROM fiscal_years WHERE end_date < ? AND status = 'open' LIMIT 1", [fy.start_date]);
   res.json({
     year: fy, result: income.result, totalRevenue: income.totalRevenue, totalExpense: income.totalExpense,
@@ -52,7 +53,12 @@ r.get('/fiscal-years/:id/close-preview', can('accounting.read'), h(async (req, r
 }));
 
 r.post('/fiscal-years/:id/close', can('accounting.close'), h(async (req, res) => {
-  const result = await tx((conn) => ledger.closeFiscalYear(conn, req.params.id, req.user.id));
+  const result = await tx(async (conn) => {
+    const out = await ledger.closeFiscalYear(conn, req.params.id, req.user.id);
+    // Stichtagsbewertungen von Fremdwährungen im neuen Jahr zurückbuchen
+    out.fxValuationsReversed = await reversePendingFxValuations(conn, req.user.id);
+    return out;
+  });
   await audit(req, 'year-close', 'fiscal_year', req.params.id, `${result.closedYear}: Ergebnis ${result.profit.toFixed(2)}`);
   res.json(result);
 }));
@@ -100,11 +106,12 @@ r.delete('/journal/:id', can('accounting.write'), h(async (req, res) => {
     const e = await one(
       `SELECT e.*, y.status FROM journal_entries e JOIN fiscal_years y ON y.id = e.fiscal_year_id WHERE e.id = ? FOR UPDATE`, [req.params.id], conn);
     if (!e) throw new HttpError(404, 'Buchung nicht gefunden');
-    if (e.ref_type !== 'manual') throw new HttpError(400, 'Automatische Buchungen können nur über den zugehörigen Beleg geändert werden.');
-    if (e.status !== 'open') throw new HttpError(400, 'Das Geschäftsjahr ist abgeschlossen.');
-    await q('DELETE FROM journal_entries WHERE id = ?', [e.id], conn);
+    if (!['manual', 'stock_valuation'].includes(e.ref_type)) throw new HttpError(400, 'Automatische Buchungen können nur über den zugehörigen Beleg storniert werden.');
+    if (e.reversed_by) throw new HttpError(400, 'Diese Buchung ist bereits storniert.');
+    // Buchungen werden nie gelöscht: Storno durch Gegenbuchung
+    await ledger.reverseEntry(conn, e, { user_id: req.user.id });
   });
-  await audit(req, 'delete', 'journal_entry', req.params.id);
+  await audit(req, 'storno', 'journal_entry', req.params.id);
   res.status(204).end();
 }));
 

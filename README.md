@@ -10,26 +10,33 @@ Ausgelegt auf Schweizer Verhältnisse (CHF, MwSt-Sätze, Kontenrahmen KMU), Ober
 | **Kundenverwaltung** | Kunden- und Lieferantenstamm, automatische Nummernvergabe, Zahlungsfristen, CSV-Export |
 | **Lagerverwaltung** | Artikelstamm (Lagerartikel und Dienstleistungen), Wareneingang/-ausgang, Inventurkorrektur, Mindestbestand mit Nachbestell-Hinweis, lückenloses Bewegungsprotokoll |
 | **Offerten** | Erstellen, PDF, Status (Entwurf → Gesendet → Akzeptiert/Abgelehnt), Umwandlung in Auftrag oder Rechnung |
-| **Auftragsverwaltung** | Auftragsbestätigung als PDF, Auslieferung mit Lagerabgang, Umwandlung in Rechnung, Storno |
+| **Auftragsverwaltung** | Auftragsbestätigung als PDF, Teillieferungen mit Lagerabgang, Teilrechnungen, Storno |
 | **Rechnungsstellung** | Entwurf → Buchen (fortlaufende Nummer, Debitorenbuchung, Lagerabgang), Teil-/Vollzahlung, Storno mit Gegenbuchung |
+| **Gutschriften** | Voll- und Teilgutschriften zu Rechnungen, automatische Verrechnung mit dem offenen Posten, Wiedereinlagerung, Auszahlung von Guthaben |
+| **Abo-Rechnungen** | Wiederkehrende Rechnungen (monatlich bis jährlich) aus einer Vorlage, automatisch zum Termin erstellt – als Entwurf oder direkt gebucht |
+| **Mahnwesen** | Mahnstufen mit Fristen, Texten und Gebühren, Mahnlauf, Mahnschreiben als PDF mit QR-Zahlteil, Versand per E-Mail |
+| **Zahlungsabgleich** | Kontoauszüge camt.053/camt.054 einlesen, Zuordnung über QR-Referenz oder Rechnungsnummer, Duplikaterkennung |
 | **QR-Rechnung** | Zahlteil mit Swiss QR Code direkt auf der Rechnung (CHF/EUR), QR-Referenz bei QR-IBAN, sonst Creditor Reference (RF…) |
 | **E-Mail-Versand** | Offerten, Auftragsbestätigungen, Rechnungen und Bestellungen als PDF per SMTP versenden; Textvorlagen mit Platzhaltern |
 | **Bestellwesen** | Bestellungen an Lieferanten mit PDF, Bestellvorschlag aus Mindestbeständen, Teil- und Vollwareneingang ins Lager, Lieferantenrechnung direkt aus der Bestellung |
-| **Fremdwährungen** | Währungen mit Kursen, Belege und Lieferantenrechnungen in Fremdwährung, Buchhaltung in Basiswährung, Kursgewinne/-verluste bei Zahlung automatisch gebucht |
+| **Fremdwährungen** | Währungen mit Kursen (Abruf der EZB-Referenzkurse auf Knopfdruck oder täglich), Belege in Fremdwährung, Kursgewinne/-verluste bei Zahlung automatisch gebucht, Stichtagsbewertung offener Posten |
+| **Preislisten** | Kundenspezifische Preise, Staffelpreise nach Menge, Kundenrabatt als Vorschlag auf Belegpositionen |
+| **Mehrsprachige Belege** | Offerten, Rechnungen, Mahnungen usw. auf Deutsch, Französisch, Italienisch oder Englisch – je Kunde hinterlegt, pro Beleg wählbar |
 | **Kostenstellen** | Zuordnung auf Belegen, Lieferantenrechnungen und manuellen Buchungen; Auswertung Ertrag/Aufwand/Ergebnis je Kostenstelle |
 | **Beleglayout** | Logo-Upload (PNG/JPEG), Position und Grösse, 3 Vorlagen, Akzentfarbe, Schrift, Adressfeld links/rechts, ein-/ausblendbare Spalten, Standardtexte mit Platzhaltern, **Live-Vorschau** |
-| **Debitoren / Kreditoren** | Offene Posten, Fälligkeitsstruktur (0 / 1–30 / 31–60 / >60 Tage), Zahlungsein- und -ausgänge, Lieferantenrechnungen mit Vorsteuer |
+| **Debitoren / Kreditoren** | Offene Posten, Fälligkeitsstruktur (0 / 1–30 / 31–60 / >60 Tage), Zahlungsein- und -ausgänge, Lieferantenrechnungen mit Vorsteuer und Belegablage (PDF/Bild) |
 | **Finanzbuchhaltung** | Doppelte Buchhaltung, automatische Buchungen aus Belegen, Erlöskonto pro Artikel, manuelle Buchungen, Kontenplan, Journal |
 | **Bilanz und Erfolgsrechnung** | Pro Geschäftsjahr, druckbar |
-| **Jahresabschluss** | Assistent mit Prüfungen; Abschluss der Erfolgskonten, Sperren des Jahres, Anlegen des Folgejahres, **Saldovortrag als Eröffnungsbilanz**, Gewinnvortrag; rückgängig machbar, solange das Folgejahr offen ist |
+| **MwSt-Abrechnung** | Nach vereinbartem oder vereinnahmtem Entgelt oder mit Saldosteuersatz, mit den Ziffern des ESTV-Formulars |
+| **Jahresabschluss** | Abschlussarbeiten (Warenlager in die Bilanz, Bewertung Fremdwährungen), Assistent mit Prüfungen; Abschluss der Erfolgskonten, Sperren des Jahres, Anlegen des Folgejahres, **Saldovortrag als Eröffnungsbilanz**, Gewinnvortrag; rückgängig machbar, solange das Folgejahr offen ist |
 | **Reporting** | Dashboard mit Kennzahlen, Umsatz pro Monat, Top-Kunden/-Artikel, Fälligkeitslisten, Lagerbewertung, MwSt-Übersicht; CSV-Export aller Listen |
 | **Administration** | Firmendaten, Nummernkreise, Standardkonten, Währungen, E-Mail-Server, Protokoll (Audit-Log), System & Updates |
-| **Benutzer & Rollen** | Benutzerverwaltung, rollenbasierter Zugriff mit 24 Einzelrechten; vordefinierte Rollen: Administrator, Buchhaltung, Verkauf, Lager, Nur Lesen |
+| **Benutzer & Rollen** | Benutzerverwaltung, rollenbasierter Zugriff mit 25 Einzelrechten, Zwei-Faktor-Anmeldung (TOTP), «Passwort vergessen» per E-Mail; vordefinierte Rollen: Administrator, Buchhaltung, Verkauf, Lager, Nur Lesen |
 
 ## Technologie
 
 - **Frontend:** React 18, React Router, Vite (Single-Page-App, keine externen CDNs/Fonts)
-- **Backend:** Node.js 22, Express, PDFKit (Belege als PDF), swissqrbill (QR-Zahlteil), Nodemailer (SMTP)
+- **Backend:** Node.js 22, Express, PDFKit (Belege als PDF), swissqrbill (QR-Zahlteil), Nodemailer (SMTP), fast-xml-parser (camt, Kurse)
 - **Datenbank:** MySQL 8 (InnoDB, Transaktionen, Fremdschlüssel)
 - **Betrieb:** Docker Compose **oder** native Installation auf CentOS Stream 9/10 (systemd + nginx)
 
@@ -157,6 +164,7 @@ automatisch und genau einmal ausgeführt; der Stand steht in der Tabelle `schema
 | `COOKIE_SECURE` | `true`, sobald die Anwendung über HTTPS läuft |
 | `HOST`, `PORT` | Bind-Adresse und Port des Servers (Standard `0.0.0.0:3000`) |
 | `UPDATE_CHECK` | `false` = keine Abfrage bei GitHub nach neuen Releases |
+| `SCHEDULER` | `false` = keine Hintergrundaufgaben (Abo-Rechnungen erzeugen, Kurse aktualisieren) |
 
 Das Datenbankschema wird beim Start automatisch angelegt (`server/src/schema.sql`), ebenso Rollen, Kontenplan und das laufende Geschäftsjahr.
 
@@ -172,6 +180,12 @@ Belege erzeugen automatisch Buchungen (Konten unter *Administration → Firma & 
 | Lieferantenrechnung | Aufwandkonto, 1170 Vorsteuer | 2000 Kreditoren |
 | Zahlung an Lieferant | 2000 Kreditoren | 1020 Bank |
 | Kursdifferenz bei Zahlung | 6940 Kursverluste | 6990 Kursgewinne |
+| Gutschrift | 3200 Erlöse, 2200 MwSt | 1100 Debitoren |
+| Mahngebühr | 1100 Debitoren | 3890 Mahngebühren |
+| Bestandesänderung Warenlager | 1200 Vorräte | 4800 Bestandesänderungen |
+
+**Nichts wird gelöscht:** Buchungen, Zahlungen und Lieferantenrechnungen lassen sich nur stornieren. Dabei entsteht eine Gegenbuchung;
+Original und Storno bleiben im Journal sichtbar und sind miteinander verknüpft. Eine Korrektur ist ein Storno mit anschliessender Neubuchung.
 
 Erlöse werden auf das beim Artikel hinterlegte Erlöskonto gebucht (ohne Angabe: Standard-Erlöskonto) und tragen die Kostenstelle des Belegs.
 
@@ -181,6 +195,24 @@ Kurse werden unter *Administration → Währungen* gepflegt und pro Beleg vorges
 
 **Bestellwesen:** Bestellung erfassen (optional mit Bestellvorschlag aus Artikeln unter Mindestbestand) → auslösen → Wareneingang
 (auch in Teilmengen) bucht das Lager und führt den Einstandspreis nach → Lieferantenrechnung aus der Bestellung erzeugt den Kreditor.
+
+**Aufträge in Teilen:** Ein Auftrag kann in mehreren Schritten ausgeliefert und verrechnet werden; je Position zeigt er gelieferte und verrechnete
+Mengen. Wird mehr verrechnet als geliefert, bucht die Teilrechnung die fehlende Menge aus dem Lager aus.
+
+**Gutschriften:** Aus einer gebuchten Rechnung entsteht ein Gutschrift-Entwurf mit deren Positionen (Mengen anpassbar). Beim Buchen werden Erlös und
+MwSt zurückgebucht, die Ware auf Wunsch wieder eingelagert und der Betrag mit der Rechnung verrechnet. Ist die Rechnung schon bezahlt, bleibt ein
+Guthaben, das ausbezahlt werden kann.
+
+**Mahnwesen** (*Finanzen → Debitoren → Mahnwesen*): Der Mahnlauf schlägt für überfällige Rechnungen die nächste Stufe vor, sobald deren Wartefrist
+abgelaufen ist. Mahngebühren werden als Forderung verbucht und sind Teil des offenen Betrags.
+
+**Zahlungsabgleich** (*Finanzen → Debitoren → Zahlungsabgleich*): Kontoauszug als camt.053- oder camt.054-Datei aus dem E-Banking hochladen. Eingänge
+werden über die Zahlungsreferenz der QR-Rechnung oder die Rechnungsnummer im Mitteilungstext zugeordnet; vor dem Verbuchen sehen Sie jede Zuordnung.
+
+**Abschlussarbeiten** (*Finanzen → Jahresabschluss*): «Warenlager in die Bilanz übernehmen» bucht die Differenz zwischen Lagerwert und Konto 1200.
+«Fremdwährungsposten bewerten» bucht nicht realisierte Kursdifferenzen zum Stichtag und macht sie am Folgetag automatisch rückgängig.
+
+**MwSt:** Die Methode (vereinbart, vereinnahmt, Saldosteuersatz) wird in den Firmendaten gewählt und lässt sich im Report umschalten.
 
 **QR-Rechnung:** Sobald in den Firmendaten eine gültige CH/LI-IBAN hinterlegt ist, erhält jede gebuchte Rechnung in CHF oder EUR den
 QR-Zahlteil (abschaltbar im Beleglayout). Mit einer QR-IBAN wird eine 27-stellige QR-Referenz erzeugt, sonst eine Creditor Reference.
@@ -198,9 +230,12 @@ Der Lagerabgang wird beim Ausliefern des Auftrags gebucht – oder beim Buchen d
 ## Sicherheit
 
 - Passwörter mit bcrypt (Kostenfaktor 12), Sitzung als `HttpOnly`/`SameSite=Strict`-Cookie, Login-Rate-Limit
+- **Zwei-Faktor-Anmeldung** mit Authenticator-App (TOTP), pro Benutzer unter *Konto & Sicherheit* einzurichten; ein Administrator kann sie bei Geräteverlust zurücksetzen
+- **Passwort vergessen:** Link per E-Mail, 60 Minuten und einmalig gültig. Voraussetzung ist ein eingerichteter E-Mail-Versand; die *Adresse der Anwendung* in den Firmendaten bestimmt den Link
+- Passwortwechsel, Zurücksetzen und Deaktivieren beenden sofort alle bestehenden Sitzungen des Benutzers
 - Jede API-Route prüft die Berechtigung der Rolle serverseitig
 - Ausschliesslich parametrisierte SQL-Abfragen; Security-Header via Helmet (CSP)
-- Alle Änderungen werden im Protokoll festgehalten
+- Buchungen und Zahlungen sind unveränderbar (Storno statt Löschen); alle Aktionen stehen im Protokoll
 
 ## Erste Schritte nach der Installation
 
@@ -209,14 +244,17 @@ Der Lagerabgang wird beim Ausliefern des Auftrags gebucht – oder beim Buchen d
 3. *Administration → Beleglayout*: Logo hochladen, Vorlage und Texte wählen.
 4. *Administration → Benutzer / Rollen & Rechte*: Mitarbeitende anlegen.
 5. Kunden, Lieferanten und Artikel erfassen; Anfangsbestände als Wareneingang buchen.
+   Mahnstufen unter *Debitoren → Mahnwesen* und die MwSt-Methode in den Firmendaten prüfen.
 6. Eröffnungssalden (z.B. Bankguthaben, Eigenkapital) als manuelle Buchung im Journal erfassen.
 
-## Bekannte Grenzen (Stand 1.1)
+## Bekannte Grenzen (Stand 1.2)
 
-- Kein automatischer Abgleich von Zahlungseingängen (camt.053/054) – Zahlungen werden manuell erfasst
-- Keine Neubewertung offener Fremdwährungsposten zum Stichtag; Kursdifferenzen entstehen bei der Zahlung
-- Kurse werden manuell gepflegt (kein automatischer Kursabruf)
-- Die MwSt-Übersicht ist eine Auswertungshilfe und ersetzt nicht die offizielle Abrechnung; das System ersetzt keine Treuhand-/Revisionsprüfung
+- Zahlungsabgleich nur für Zahlungseingänge; Zahlungsausgänge (pain.001) werden nicht erzeugt
+- Abo-Rechnungen: Positionen einer Vorlage lassen sich nicht direkt bearbeiten (neues Abo aus angepasster Rechnung anlegen)
+- Standardtexte und E-Mail-Vorlagen sind nur auf Deutsch anpassbar; für FR/IT/EN gelten mitgelieferte Belegtexte
+- Keine Wiederherstellungscodes für die Zwei-Faktor-Anmeldung – verliert der einzige Administrator sein Gerät, muss der zweite Faktor in der Datenbank zurückgesetzt werden
+- Gutschriften lassen sich nicht stornieren; eine verrechnete Gutschrift wird mit einer neuen Rechnung korrigiert
+- Die MwSt-Auswertung ist eine Abrechnungshilfe und ersetzt nicht die offizielle Abrechnung; das System ersetzt keine Treuhand-/Revisionsprüfung
 
 ## Automatische Tests
 
@@ -226,9 +264,9 @@ docker compose -f docker-compose.test.yml down -v
 ```
 
 Die Suite startet eine frische Wegwerf-Datenbank, die Anwendung und einen Mail-Fänger und prüft über die API:
-Anmeldung und Rollenrechte, Stammdaten und Lager, den Belegfluss von der Offerte bis zur Zahlung, Storno,
-Fremdwährungen mit Kursdifferenzen, Bestellwesen, manuelle Buchungen, Kostenstellen, PDF und QR-Rechnung, E-Mail-Versand
-sowie den Jahresabschluss mit Saldovortrag. Dazu kommen Unit-Tests der Rechenlogik (`server/test/unit.test.js`).
+Anmeldung, Rollenrechte, Zwei-Faktor-Anmeldung und Passwort-Reset, Stammdaten und Lager, den Belegfluss von der Offerte bis zur Zahlung,
+Teillieferung und Teilrechnung, Gutschriften, Mahnwesen, Zahlungsabgleich, Abo-Rechnungen, Storno statt Löschen, Fremdwährungen,
+Bestellwesen, Buchhaltung, MwSt-Methoden, PDF und QR-Rechnung, E-Mail-Versand sowie den Jahresabschluss mit Saldovortrag (57 Tests). Dazu kommen Unit-Tests der Rechenlogik (`server/test/unit.test.js`).
 Nach jeder Buchung wird geprüft, dass die Bilanz ausgeglichen ist.
 
 Die Oberfläche selbst (Klickwege im Browser) ist nicht automatisiert getestet.

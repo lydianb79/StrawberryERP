@@ -104,23 +104,39 @@ function Stock() {
   );
 }
 
+const VAT_METHODS = { agreed: 'Effektiv, vereinbartes Entgelt', received: 'Effektiv, vereinnahmtes Entgelt', net: 'Saldosteuersatz' };
+
 function Vat({ range }) {
-  const data = useReport(`/reports/vat?from=${range.from}&to=${range.to}`);
+  const [method, setMethod] = useState('');
+  const data = useReport(`/reports/vat?from=${range.from}&to=${range.to}${method ? `&method=${method}` : ''}`);
   if (!data) return <div className="empty">Lädt…</div>;
   return (
-    <div className="card statement">
-      <table className="table">
-        <tbody>
-          <tr className="section"><td colSpan={3}>Geschuldete Umsatzsteuer (gebuchte Rechnungen)</td></tr>
-          {data.output.map((o) => <tr key={o.rate}><td>Umsätze zu {o.rate} %</td><td className="num">{money(o.base)}</td><td className="num">{money(o.vat)}</td></tr>)}
-          {!data.output.length && <tr><td className="muted" colSpan={3}>Keine Umsätze im Zeitraum</td></tr>}
-          <tr className="total"><td>Total Umsatzsteuer</td><td /><td className="num">{money(data.outputVat)}</td></tr>
-          <tr className="section"><td colSpan={3}>Vorsteuer (Lieferantenrechnungen)</td></tr>
-          <tr><td>{data.input.n} Lieferantenrechnungen</td><td className="num">{money(data.input.base)}</td><td className="num">{money(data.input.vat)}</td></tr>
-          <tr className="grand"><td>{data.payable >= 0 ? 'An die ESTV zu bezahlen' : 'Guthaben gegenüber ESTV'}</td><td /><td className="num">{money(Math.abs(data.payable))}</td></tr>
-        </tbody>
-      </table>
-      <div className="card-body muted small">Übersicht nach vereinbartem Entgelt (Rechnungsdatum). Dient als Grundlage für die MwSt-Abrechnung und ersetzt diese nicht.</div>
+    <div className="stack">
+      <div className="row no-print">
+        <span className="muted">Abrechnungsmethode</span>
+        <select className="input" style={{ width: 300 }} value={method || data.method} onChange={(e) => setMethod(e.target.value)}>
+          {Object.entries(VAT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <span className="muted small">Standard gemäss Administration → Firma &amp; Nummern</span>
+      </div>
+      <div className="card statement">
+        <table className="table">
+          <tbody>
+            <tr className="section"><td>Ziff.</td><td>{data.method === 'received' ? 'Vereinnahmte Entgelte (Zahlungseingänge)' : 'Vereinbarte Entgelte (gebuchte Rechnungen abzüglich Gutschriften)'}</td><td className="num">Umsatz netto</td><td className="num">Steuer</td></tr>
+            <tr><td className="muted">200</td><td>Total der Entgelte</td><td className="num">{money(data.turnover)}</td><td /></tr>
+            {data.method !== 'net' && data.output.map((o) => <tr key={o.rate}><td className="muted">{o.ziffer || ''}</td><td>Leistungen zu {o.rate} %</td><td className="num">{money(o.base)}</td><td className="num">{money(o.vat)}</td></tr>)}
+            {data.method === 'net' && <tr><td className="muted">322</td><td>Bruttoumsatz {money(data.gross)} × Saldosteuersatz {data.netRate} %</td><td /><td className="num">{money(data.outputVat)}</td></tr>}
+            {!data.output.length && <tr><td /><td className="muted" colSpan={3}>Keine Umsätze im Zeitraum</td></tr>}
+            <tr className="total"><td className="muted">399</td><td>Total geschuldete Steuer</td><td /><td className="num">{money(data.outputVat)}</td></tr>
+            {data.method !== 'net' && <>
+              <tr className="section"><td /><td colSpan={3}>Vorsteuer</td></tr>
+              <tr><td className="muted">400</td><td>{data.input.n} Lieferantenrechnungen{data.method === 'received' ? ' (bezahlt im Zeitraum)' : ''}</td><td className="num">{money(data.input.base)}</td><td className="num">{money(data.input.vat)}</td></tr>
+            </>}
+            <tr className="grand"><td>{data.payable >= 0 ? '500' : '510'}</td><td>{data.payable >= 0 ? 'An die ESTV zu bezahlen' : 'Guthaben gegenüber ESTV'}</td><td /><td className="num">{money(Math.abs(data.payable))}</td></tr>
+          </tbody>
+        </table>
+        <div className="card-body muted small">Die Ziffern entsprechen dem Abrechnungsformular der ESTV (Sätze ab 2024). Die Auswertung dient als Grundlage für die MwSt-Abrechnung und ersetzt diese nicht; beim Saldosteuersatz wird mit einem einzigen Satz gerechnet.</div>
+      </div>
     </div>
   );
 }

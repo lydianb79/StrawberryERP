@@ -28,7 +28,8 @@ r.get('/', h(async (req, res) => {
   if (supplier_id) { where.push('d.supplier_id = ?'); params.push(supplier_id); }
   if (search) { where.push('(d.number LIKE ? OR c.company LIKE ? OR s.company LIKE ? OR d.reference LIKE ?)'); params.push(...Array(4).fill(`%${search}%`)); }
   res.json(await q(
-    `SELECT d.id, d.type, d.number, d.date, d.due_date, d.valid_until, d.status, d.reference, d.subtotal, d.total, d.paid_amount,
+    `SELECT d.id, d.type, d.number, d.date, d.due_date, d.valid_until, d.status, d.reference, d.subtotal, d.total, d.paid_amount, d.dunning_level, d.dunning_fees,
+            (d.total + d.dunning_fees - d.paid_amount) AS open_amount,
             d.customer_id, d.supplier_id, COALESCE(c.company, s.company) AS partner_name, d.currency, d.exchange_rate, d.sent_at,
             ROUND(d.subtotal * d.exchange_rate, 2) AS base_subtotal, ROUND(d.total * d.exchange_rate, 2) AS base_total,
             (d.type = 'invoice' AND d.status IN ('open','partial') AND d.due_date < CURDATE()) AS overdue
@@ -76,22 +77,25 @@ r.post('/:id/convert', h(async (req, res) => {
   if (!TYPES[to]) throw new HttpError(400, 'Zieltyp fehlt');
   await needFor(req, req.params.id, 'read');
   need(req, `${TYPES[to].perm}.write`);
-  const id = await tx((conn) => docs.convertDocument(conn, req.user, req.params.id, to));
+  const id = await tx((conn) => docs.convertDocument(conn, req.user, req.params.id, to, req.body?.items));
   await audit(req, 'convert', to, id, `aus Beleg ${req.params.id}`);
   res.status(201).json(await docs.getDocument(undefined, id));
 }));
 
 r.post('/:id/deliver', h(async (req, res) => {
   need(req, 'orders.write');
-  const doc = await tx((conn) => docs.deliverOrder(conn, req.user, req.params.id));
+  const doc = await tx((conn) => docs.deliverOrder(conn, req.user, req.params.id, req.body?.items));
   await audit(req, 'deliver', 'order', doc.id, doc.number);
   res.json(await docs.getDocument(undefined, req.params.id));
 }));
 
 r.post('/:id/issue', h(async (req, res) => {
   need(req, 'invoices.write');
-  const number = await tx((conn) => docs.issueInvoice(conn, req.user, req.params.id));
-  await audit(req, 'issue', 'invoice', req.params.id, number);
+  const type = await typeOf(req.params.id);
+  const number = await tx((conn) => (type === 'credit'
+    ? docs.issueCredit(conn, req.user, req.params.id, { restock: req.body?.restock !== false })
+    : docs.issueInvoice(conn, req.user, req.params.id)));
+  await audit(req, 'issue', type, req.params.id, number);
   res.json(await docs.getDocument(undefined, req.params.id));
 }));
 
@@ -104,15 +108,15 @@ r.post('/:id/cancel', h(async (req, res) => {
 
 r.post('/:id/payments', h(async (req, res) => {
   need(req, 'receivables.write');
-  await tx((conn) => docs.addInvoicePayment(conn, req.user, req.params.id, req.body || {}));
+  await tx((conn) => docs.addPayment(conn, req.user, req.params.id, req.body || {}));
   await audit(req, 'payment', 'invoice', req.params.id, `Betrag ${req.body?.amount}`);
   res.status(201).json(await docs.getDocument(undefined, req.params.id));
 }));
 
 r.delete('/payments/:paymentId', h(async (req, res) => {
   need(req, 'receivables.write');
-  const doc = await tx((conn) => docs.removeInvoicePayment(conn, req.params.paymentId));
-  await audit(req, 'payment-delete', 'invoice', doc.id, doc.number);
+  const doc = await tx((conn) => docs.reversePayment(conn, req.user, req.params.paymentId));
+  await audit(req, 'payment-storno', 'invoice', doc.id, doc.number);
   res.json(await docs.getDocument(undefined, doc.id));
 }));
 

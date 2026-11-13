@@ -13,7 +13,7 @@ import { has } from '../auth.js';
 const r = Router();
 
 // ---------- Benutzer ----------
-const USER_COLS = 'u.id, u.email, u.name, u.role_id, r.name AS role, u.active, u.last_login, u.created_at';
+const USER_COLS = 'u.id, u.email, u.name, u.role_id, r.name AS role, u.active, u.totp_enabled, u.last_login, u.created_at';
 
 r.get('/users', can('admin.users'), h(async (_req, res) => {
   res.json(await q(`SELECT ${USER_COLS} FROM users u JOIN roles r ON r.id = u.role_id ORDER BY u.name`));
@@ -38,7 +38,7 @@ r.post('/users', can('admin.users'), h(async (req, res) => {
 
 r.put('/users/:id', can('admin.users'), h(async (req, res) => {
   const id = Number(req.params.id);
-  const { email, name, password, role_id, active } = req.body || {};
+  const { email, name, password, role_id, active, reset2fa } = req.body || {};
   await tx(async (conn) => {
     const user = await one('SELECT * FROM users WHERE id = ? FOR UPDATE', [id], conn);
     if (!user) throw new HttpError(404, 'Benutzer nicht gefunden');
@@ -50,7 +50,10 @@ r.put('/users/:id', can('admin.users'), h(async (req, res) => {
     if (password) {
       validatePassword(password);
       data.password_hash = await bcrypt.hash(password, 12);
+      data.token_version = user.token_version + 1; // bestehende Sitzungen des Benutzers beenden
     }
+    if (reset2fa) { data.totp_enabled = 0; data.totp_secret = null; }
+    if (data.active === 0) data.token_version = user.token_version + 1;
     if (id === req.user.id && data.active === 0) throw new HttpError(400, 'Sie können sich nicht selbst deaktivieren.');
     if (Object.keys(data).length) await q('UPDATE users SET ? WHERE id = ?', [data, id], conn);
     if (data.active === 0 || data.role_id) {
@@ -190,7 +193,7 @@ r.post('/layout-preview', can('admin.settings'), h(async (req, res) => {
     for (const k of Object.keys(DEFAULTS.layout)) if (k in req.body.layout) settings.layout[k] = req.body.layout[k];
   }
   const sample = sampleDocument(settings);
-  const type = ['quote', 'order', 'invoice'].includes(req.body?.type) ? req.body.type : 'invoice';
+  const type = ['quote', 'order', 'invoice', 'credit', 'purchase'].includes(req.body?.type) ? req.body.type : 'invoice';
   sample.doc.type = type;
   sample.doc.number = `${settings.numbering[`${type}Prefix`]}-${new Date().getFullYear()}-0042`;
   sample.doc.valid_until = sample.doc.due_date;

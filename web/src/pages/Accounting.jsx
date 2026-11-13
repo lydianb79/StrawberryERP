@@ -4,7 +4,8 @@ import { useAuth } from '../auth.js';
 import { DataTable, Field, Icon, Modal, PageHead, useToast } from '../components/ui.jsx';
 
 const REF = {
-  manual: 'Manuell', invoice: 'Rechnung', invoice_cancel: 'Storno', payment: 'Zahlung', supplier_invoice: 'Kreditor',
+  manual: 'Manuell', invoice: 'Rechnung', invoice_cancel: 'Storno', credit: 'Gutschrift', dunning: 'Mahngebühr', stock_valuation: 'Lagerbewertung',
+  fx_valuation: 'Kursbewertung', payment: 'Zahlung', supplier_invoice: 'Kreditor',
   closing: 'Abschluss', opening: 'Eröffnung',
 };
 
@@ -124,8 +125,8 @@ export function Journal() {
   useEffect(() => { api('/reports/lookup').then((l) => { setAccounts(l.accounts); setCostCenters(l.costCenters); }).catch(() => {}); }, []);
 
   const remove = async (entry) => {
-    if (!window.confirm('Diese manuelle Buchung löschen?')) return;
-    try { await api(`/accounting/journal/${entry.id}`, { method: 'DELETE' }); toast('Buchung gelöscht.'); load(); } catch (err) { toast.error(err.message); }
+    if (!window.confirm('Diese Buchung stornieren?\n\nBuchungen werden nicht gelöscht: Es wird eine Gegenbuchung erstellt, beide bleiben im Journal sichtbar.')) return;
+    try { await api(`/accounting/journal/${entry.id}`, { method: 'DELETE' }); toast('Buchung storniert.'); load(); } catch (err) { toast.error(err.message); }
   };
 
   const writable = can('accounting.write') && year?.status === 'open';
@@ -150,8 +151,9 @@ export function Journal() {
             <tbody>
               {(entries || []).map((e) => [
                 <tr key={`e${e.id}`} className="group-row">
-                  <td>{fmtDate(e.date)}</td><td>{e.id}</td><td>{e.text}</td><td>{REF[e.ref_type] || e.ref_type}</td><td /><td />
-                  <td className="actions">{writable && e.ref_type === 'manual' && <button className="icon-btn danger" title="Löschen" onClick={() => remove(e)}><Icon name="trash" /></button>}</td>
+                  <td>{fmtDate(e.date)}</td><td>{e.id}</td><td>{e.text}{e.reversed_by && <span className="badge" style={{ marginLeft: 8 }}>{e.ref_type.endsWith('_storno') ? `Storno zu Nr. ${e.reversed_by}` : `storniert durch Nr. ${e.reversed_by}`}</span>}</td>
+                  <td>{REF[e.ref_type] || (e.ref_type.endsWith('_storno') ? 'Storno' : e.ref_type)}</td><td /><td />
+                  <td className="actions">{can('accounting.write') && ['manual', 'stock_valuation'].includes(e.ref_type) && !e.reversed_by && <button className="icon-btn danger" title="Stornieren" onClick={() => remove(e)}><Icon name="undo" /></button>}</td>
                 </tr>,
                 ...e.lines.map((l) => (
                   <tr key={`l${l.id}`}>
@@ -309,6 +311,62 @@ function CloseWizard({ year, onClose, onDone }) {
   );
 }
 
+/** Abschlussarbeiten vor dem Jahresabschluss: Lagerbestand in die Bilanz, Fremdwährungen zum Stichtagskurs. */
+function ClosingWork({ canWrite }) {
+  const toast = useToast();
+  const [date, setDate] = useState(today());
+  const [stock, setStock] = useState(null);
+  const [fx, setFx] = useState(null);
+  const load = useCallback(() => {
+    api(`/closing/stock?date=${date}`).then(setStock).catch(() => setStock(null));
+    api('/closing/fx').then(setFx).catch(() => setFx(null));
+  }, [date]);
+  useEffect(() => { load(); }, [load]);
+  const post = async (path, question, done) => {
+    if (!window.confirm(question)) return;
+    try { await api(path, { method: 'POST', body: { date } }); toast(done); load(); } catch (err) { toast.error(err.message); }
+  };
+  return (
+    <div className="card" style={{ marginBottom: 18 }}>
+      <div className="card-head"><h2>Abschlussarbeiten</h2><div className="spacer" />
+        <span className="muted small">Stichtag</span><input className="input" style={{ width: 160 }} type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+      <div className="card-body grid-2">
+        <div>
+          <h3>Warenlager in die Bilanz übernehmen</h3>
+          {stock ? (
+            <>
+              <dl className="dl" style={{ margin: '8px 0' }}>
+                <dt>Lagerwert laut Lager</dt><dd>{money(stock.stockValue)}</dd>
+                <dt>Gebucht auf Konto {stock.account}</dt><dd>{money(stock.booked)}</dd>
+                <dt>Bestandesänderung</dt><dd className={stock.difference < 0 ? 'neg' : ''}>{money(stock.difference)}</dd>
+              </dl>
+              {canWrite && <button className="btn" disabled={!stock.difference}
+                onClick={() => post('/closing/stock', `Bestandesänderung von ${money(stock.difference)} per ${fmtDate(date)} buchen (Konto ${stock.account} gegen ${stock.changeAccount})?`, 'Bestandesänderung gebucht.')}>
+                {stock.difference ? 'Bestandesänderung buchen' : 'Bilanz stimmt mit dem Lager überein'}</button>}
+            </>
+          ) : <p className="muted">Lädt…</p>}
+        </div>
+        <div>
+          <h3>Offene Fremdwährungsposten bewerten</h3>
+          {fx ? (
+            <>
+              <dl className="dl" style={{ margin: '8px 0' }}>
+                <dt>Debitoren ({fx.receivables.length} Posten)</dt><dd className={fx.receivablesDiff < 0 ? 'neg' : ''}>{money(fx.receivablesDiff)}</dd>
+                <dt>Kreditoren ({fx.payables.length} Posten)</dt><dd className={fx.payablesDiff < 0 ? 'neg' : ''}>{money(fx.payablesDiff)}</dd>
+                <dt>{fx.total >= 0 ? 'Nicht realisierter Kursgewinn' : 'Nicht realisierter Kursverlust'}</dt><dd className={fx.total < 0 ? 'neg' : ''}>{money(fx.total)}</dd>
+              </dl>
+              {canWrite && <button className="btn" disabled={!fx.receivablesDiff && !fx.payablesDiff}
+                onClick={() => post('/closing/fx', `Kursbewertung von ${money(fx.total)} per ${fmtDate(date)} buchen?\n\nSie wird am Folgetag automatisch zurückgebucht – bei einem Stichtag am Jahresende durch den Jahresabschluss.`, 'Kursbewertung gebucht.')}>
+                {fx.receivablesDiff || fx.payablesDiff ? 'Bewertung buchen' : 'Keine Kursdifferenzen'}</button>}
+              <p className="muted small" style={{ marginBottom: 0 }}>Grundlage sind die Kurse unter Administration → Währungen.</p>
+            </>
+          ) : <p className="muted">Lädt…</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function FiscalYears() {
   const { can } = useAuth();
   const toast = useToast();
@@ -336,6 +394,7 @@ export function FiscalYears() {
       <PageHead title="Jahresabschluss" subtitle="Geschäftsjahre verwalten, abschliessen und Salden auf das neue Jahr vortragen">
         {mayClose && <button className="btn" onClick={suggest}><Icon name="plus" /> Geschäftsjahr anlegen</button>}
       </PageHead>
+      <ClosingWork canWrite={can('accounting.write')} />
       <DataTable searchable={false} rows={years} columns={[
         { key: 'name', label: 'Geschäftsjahr', render: (y) => <b>{y.name}</b> },
         { key: 'start_date', label: 'Beginn', render: (y) => fmtDate(y.start_date) },

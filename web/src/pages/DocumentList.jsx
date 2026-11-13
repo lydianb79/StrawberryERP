@@ -9,12 +9,15 @@ const FILTERS = {
   order: ['open', 'delivered', 'invoiced', 'cancelled'],
   invoice: ['draft', 'open', 'partial', 'paid', 'cancelled'],
   purchase: ['draft', 'ordered', 'partly', 'received', 'cancelled'],
+  credit: ['draft', 'open', 'paid'],
 };
+FILTERS.order = ['open', 'partly', 'delivered', 'invoiced', 'cancelled'];
 const SUBTITLE = {
   quote: 'Angebote erstellen und in Aufträge umwandeln', order: 'Auftragsabwicklung und Auslieferung',
-  invoice: 'Rechnungen erstellen, buchen und versenden', purchase: 'Bestellungen bei Lieferanten, Wareneingang und Rechnungskontrolle',
+  invoice: 'Rechnungen erstellen, buchen und versenden', credit: 'Gutschriften zu Rechnungen: Retouren, Preisnachlässe, Korrekturen', purchase: 'Bestellungen bei Lieferanten, Wareneingang und Rechnungskontrolle',
 };
-const NEW = { quote: 'Neue Offerte', order: 'Neuer Auftrag', invoice: 'Neue Rechnung', purchase: 'Neue Bestellung' };
+const NEW = { quote: 'Neue Offerte', order: 'Neuer Auftrag', invoice: 'Neue Rechnung', purchase: 'Neue Bestellung', credit: 'Neue Gutschrift' };
+const label = (s, type) => (STATUS[`${type}:${s}`] || STATUS[s])[0];
 
 export default function DocumentList({ type }) {
   const meta = DOC[type];
@@ -23,13 +26,14 @@ export default function DocumentList({ type }) {
   const navigate = useNavigate();
   const [rows, setRows] = useState(null);
   const [status, setStatus] = useState('');
+  const [search, setSearch] = useState('');
   const base = settings?.company?.currency || 'CHF';
 
   useEffect(() => { setStatus(''); }, [type]);
   useEffect(() => {
     setRows(null);
-    api(`/documents?type=${type}${status ? `&status=${status}` : ''}`).then(setRows).catch((e) => { setRows([]); toast.error(e.message); });
-  }, [type, status, toast]);
+    api(`/documents?type=${type}${status ? `&status=${status}` : ''}${search ? `&q=${encodeURIComponent(search)}` : ''}`).then(setRows).catch((e) => { setRows([]); toast.error(e.message); });
+  }, [type, status, search, toast]);
 
   const columns = [
     { key: 'number', label: 'Nr.', render: (r) => <b>{r.number || 'Entwurf'}</b>, csv: (r) => r.number || 'Entwurf' },
@@ -42,9 +46,10 @@ export default function DocumentList({ type }) {
     { key: 'currency', label: 'Whg.' },
     { key: 'subtotal', label: 'Netto', num: true, render: (r) => money(r.subtotal) },
     { key: 'total', label: 'Total inkl. MwSt', num: true, render: (r) => money(r.total) },
-    type === 'invoice' && { key: 'open', label: 'Offen', num: true, csv: (r) => r.total - r.paid_amount,
-      render: (r) => (['open', 'partial'].includes(r.status) ? money(r.total - r.paid_amount) : '–') },
-    { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} overdue={!!r.overdue} />, csv: (r) => STATUS[r.status]?.[0] },
+    ['invoice', 'credit'].includes(type) && { key: 'open', label: 'Offen', num: true, csv: (r) => r.open_amount,
+      render: (r) => (['open', 'partial'].includes(r.status) ? money(r.open_amount) : '–') },
+    type === 'invoice' && { key: 'dunning_level', label: 'Mahnstufe', num: true, render: (r) => r.dunning_level || '' },
+    { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} type={type} overdue={!!r.overdue} />, csv: (r) => label(r.status, type) },
   ].filter(Boolean);
   const before = columns.findIndex((c) => c.key === 'subtotal');
 
@@ -53,11 +58,12 @@ export default function DocumentList({ type }) {
       <PageHead title={meta.title} subtitle={SUBTITLE[type]}>
         {can(`${meta.perm}.write`) && <button className="btn primary" onClick={() => navigate(`/${meta.path}/neu`)}><Icon name="plus" /> {NEW[type]}</button>}
       </PageHead>
-      <DataTable columns={columns} rows={rows} exportName={meta.path} onRowClick={(r) => navigate(`/${meta.path}/${r.id}`)}
+      <DataTable columns={columns} rows={rows} exportName={meta.path} onSearch={setSearch}
+        note={rows?.length === 1000 ? 'neueste 1000 – Suche oder Filter verwenden' : null} onRowClick={(r) => navigate(`/${meta.path}/${r.id}`)}
         toolbar={(
           <select className="input" style={{ width: 200 }} value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">Alle Status</option>
-            {FILTERS[type].map((s) => <option key={s} value={s}>{STATUS[s][0]}</option>)}
+            {FILTERS[type].map((s) => <option key={s} value={s}>{label(s, type)}</option>)}
           </select>
         )}
         footer={(list) => (

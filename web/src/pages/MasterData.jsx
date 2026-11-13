@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import CrudPage from '../components/CrudPage.jsx';
-import { ACCOUNT_TYPES, api } from '../lib.js';
+import { ACCOUNT_TYPES, LANGUAGES, api } from '../lib.js';
+import { useToast } from '../components/ui.jsx';
 import { useAuth } from '../auth.js';
 
 /** Auswahllisten (Währungen, Konten, Lieferanten …) für Formulare. */
@@ -35,12 +36,13 @@ const partnerFields = (currencies, extra = []) => [
   { name: 'vat_no', label: 'UID / MwSt-Nr.' },
   { name: 'payment_terms_days', label: 'Zahlungsfrist (Tage)', type: 'number' },
   { name: 'currency', label: 'Währung', type: 'select', required: true, options: currencies.map((c) => ({ value: c, label: c })) },
+  { name: 'language', label: 'Belegsprache', type: 'select', required: true, options: Object.entries(LANGUAGES).map(([value, label]) => ({ value, label })) },
   ...extra,
   { name: 'notes', label: 'Notizen', type: 'textarea', span: 'all' },
   { name: 'active', label: 'Aktiv', type: 'checkbox' },
 ];
 
-const partnerDefaults = (base) => ({ country: 'Schweiz', payment_terms_days: 30, active: true, currency: base });
+const partnerDefaults = (base) => ({ country: 'Schweiz', payment_terms_days: 30, active: true, currency: base, language: 'de', discount_pct: 0 });
 
 function useCurrencyCodes() {
   const { settings } = useAuth();
@@ -53,7 +55,7 @@ export function Customers() {
   const { base, codes } = useCurrencyCodes();
   return (
     <CrudPage title="Kunden" subtitle="Kundenstamm mit Adressen und Konditionen" endpoint="/customers" writePerm="customers.write"
-      columns={partnerColumns} fields={partnerFields(codes)} defaults={partnerDefaults(base)} newLabel="Neuer Kunde" exportName="kunden" />
+      columns={partnerColumns} fields={partnerFields(codes, [{ name: 'discount_pct', label: 'Kundenrabatt (%)', type: 'number', hint: 'Wird auf neuen Belegpositionen vorgeschlagen' }])} defaults={partnerDefaults(base)} newLabel="Neuer Kunde" exportName="kunden" />
   );
 }
 
@@ -104,9 +106,18 @@ export function CostCenters() {
 
 export function Currencies() {
   const { settings } = useAuth();
+  const toast = useToast();
+  const [version, setVersion] = useState(0);
   const base = settings?.company?.currency || 'CHF';
+  const refresh = async () => {
+    try {
+      const r = await api('/currencies-refresh', { method: 'POST' });
+      toast(`Kurse vom ${r.date || 'heute'} übernommen: ${r.updated.map((u) => `${u.code} ${u.rate}`).join(', ') || 'keine'}${r.skipped.length ? ` · ohne Kurs: ${r.skipped.join(', ')}` : ''}`);
+      setVersion((v) => v + 1);
+    } catch (err) { toast.error(err.message); }
+  };
   return (
-    <CrudPage title="Währungen" subtitle={`Fremdwährungen und Kurse. Basiswährung der Buchhaltung: ${base}. Der Kurs gibt an, wie viel ${base} eine Einheit der Fremdwährung wert ist.`}
+    <CrudPage key={version} headerActions={<button className="btn" onClick={refresh}>Kurse jetzt aktualisieren</button>} title="Währungen" subtitle={`Fremdwährungen und Kurse. Basiswährung der Buchhaltung: ${base}. Der Kurs gibt an, wie viel ${base} eine Einheit der Fremdwährung wert ist.`}
       endpoint="/currencies" writePerm="admin.settings" newLabel="Neue Währung" exportName="waehrungen" defaults={{ rate: 1, active: true }}
       columns={[
         { key: 'code', label: 'Code', render: (r) => <b>{r.code}</b> },

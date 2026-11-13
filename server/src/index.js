@@ -16,6 +16,8 @@ import documentRoutes from './routes/documents.js';
 import payableRoutes from './routes/payables.js';
 import accountingRoutes from './routes/accounting.js';
 import reportRoutes from './routes/reports.js';
+import extraRoutes from './routes/extras.js';
+import { startScheduler } from './services/scheduler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -40,7 +42,9 @@ app.use(helmet({
   crossOriginOpenerPolicy: false,
   originAgentCluster: false,
 }));
-app.use(express.json({ limit: '4mb' }));
+// Die Belegablage nimmt grössere Dateien an und bringt ihren eigenen Parser mit.
+const json = express.json({ limit: '4mb' });
+app.use((req, res, next) => (req.path === '/api/attachments' ? next() : json(req, res, next)));
 app.use(cookieParser());
 
 app.get('/api/health', async (_req, res) => {
@@ -63,6 +67,7 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/payables', payableRoutes);
 app.use('/api/accounting', accountingRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api', extraRoutes);
 app.use('/api', adminRoutes);
 app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Unbekannter API-Endpunkt')));
 
@@ -93,4 +98,5 @@ const port = Number(process.env.PORT || 3000);
 await waitForDb();
 await migrate();
 const host = process.env.HOST || '0.0.0.0';
+startScheduler();
 app.listen(port, host, () => console.log(`[server] StrawberryERP läuft auf ${host}:${port}`));

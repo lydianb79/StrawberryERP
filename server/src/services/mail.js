@@ -59,7 +59,8 @@ export function fillTemplate(text, doc, company) {
     .replaceAll('{gueltig}', date(doc.valid_until))
     .replaceAll('{total}', money(doc.total))
     .replaceAll('{waehrung}', doc.currency || '')
-    .replaceAll('{firma}', company.name || '');
+    .replaceAll('{firma}', company.name || '')
+    .replaceAll('{titel}', doc.title || '');
 }
 
 /** Vorschlag für Empfänger, Betreff und Text eines Belegs. */
@@ -102,6 +103,20 @@ export async function sendDocument(conn, id, { to, cc, subject, message }) {
     attachments: [{ filename, content: buffer, contentType: 'application/pdf' }],
   });
   return { doc, recipients };
+}
+
+/** Allgemeiner Versand (Passwort-Reset, Mahnungen). */
+export async function sendMail(conn, { to, cc, subject, text, attachments }) {
+  const { mail } = await getSettings(conn);
+  const recipients = parseRecipients(to, 'Empfänger', true);
+  const copies = parseRecipients(cc, 'Kopie');
+  if (!String(subject || '').trim()) throw new HttpError(400, 'Bitte einen Betreff angeben.');
+  await deliver(mail, { to: recipients, cc: copies.length ? copies : undefined, subject: String(subject).slice(0, 200), text: String(text || ''), attachments });
+  return recipients;
+}
+
+export async function isMailConfigured(conn) {
+  return mailConfigured((await getSettings(conn)).mail);
 }
 
 export async function sendTestMail(conn, to) {

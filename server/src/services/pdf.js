@@ -1,6 +1,7 @@
 import PDFDocument from 'pdfkit';
 import { computeTotals, TYPES } from './documents.js';
 import { buildQrBill } from './qrbill.js';
+import { labelsFor, defaultText } from './i18n.js';
 
 const FONTS = {
   Helvetica: ['Helvetica', 'Helvetica-Bold'],
@@ -28,9 +29,11 @@ export function renderDocumentPdf({ doc, items, customer, settings, logo }, stre
   const accent = tpl === 'minimal' ? '#222222' : validColor(layout.accentColor, '#d6294a');
   const INK = '#1a1d23', MUTED = '#6b7280', LINE = '#d5d9e0';
   const L = 50, R = 545, W = R - L;
-  const label = TYPES[doc.type].label;
+  const lang = ['de', 'fr', 'it', 'en'].includes(doc.language) ? doc.language : 'de';
+  const T = labelsFor(lang);
+  const label = doc.title || T.doc[doc.type] || TYPES[doc.type].label;
   const cur = doc.currency || c.currency || 'CHF';
-  const title = `${label} ${doc.number || '(Entwurf)'}`;
+  const title = `${label} ${doc.number || `(${T.draft})`}`;
 
   const pdf = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true, info: { Title: title, Author: c.name } });
   pdf.pipe(stream);
@@ -40,7 +43,7 @@ export function renderDocumentPdf({ doc, items, customer, settings, logo }, stre
   const top = 42;
   const hasLogo = layout.showLogo && logo?.buffer?.length;
   const pos = ['left', 'center', 'right'].includes(layout.logoPosition) ? layout.logoPosition : 'left';
-  const contact = [c.addition, c.street, `${c.zip || ''} ${c.city || ''}`.trim(), c.phone && `Tel. ${c.phone}`, c.email, c.website].filter(Boolean);
+  const contact = [c.addition, c.street, `${c.zip || ''} ${c.city || ''}`.trim(), c.phone && `${T.phone} ${c.phone}`, c.email, c.website].filter(Boolean);
   let logoDrawn = false;
   if (hasLogo) {
     const w = Math.min(300, Math.max(40, Number(layout.logoWidth) || 150));
@@ -72,14 +75,14 @@ export function renderDocumentPdf({ doc, items, customer, settings, logo }, stre
   pdf.font(F).fontSize(10.5).fillColor(INK).text(addr.join('\n'), addrX, y + 14, { width: 215, lineGap: 2 });
 
   const meta = [
-    ['Datum', date(doc.date)],
-    [`${{ invoice: 'Rechnungs', order: 'Auftrags', quote: 'Offert', purchase: 'Bestell' }[doc.type]}-Nr.`, doc.number || 'Entwurf'],
-    [doc.type === 'purchase' ? 'Lieferanten-Nr.' : 'Kunden-Nr.', customer.number],
-    doc.type === 'purchase' && doc.due_date ? ['Liefertermin', date(doc.due_date)] : null,
-    doc.type === 'invoice' && doc.due_date ? ['Zahlbar bis', date(doc.due_date)] : null,
-    doc.type === 'quote' && doc.valid_until ? ['Gültig bis', date(doc.valid_until)] : null,
-    doc.reference ? ['Referenz', doc.reference] : null,
-    c.vat_no ? ['MwSt-Nr.', c.vat_no] : null,
+    [T.date, date(doc.date)],
+    [T.no[doc.type], doc.number || T.draft],
+    [doc.type === 'purchase' ? T.supplierNo : T.customerNo, customer.number],
+    doc.type === 'purchase' && doc.due_date ? [T.deliveryDate, date(doc.due_date)] : null,
+    doc.type === 'invoice' && doc.due_date ? [T.payableUntil, date(doc.due_date)] : null,
+    doc.type === 'quote' && doc.valid_until ? [T.validUntil, date(doc.valid_until)] : null,
+    doc.reference ? [T.reference, doc.reference] : null,
+    c.vat_no ? [T.vatNo, c.vat_no] : null,
   ].filter(Boolean);
   let my = y + 14;
   for (const [k, v] of meta) {
@@ -101,9 +104,10 @@ export function renderDocumentPdf({ doc, items, customer, settings, logo }, stre
     .replaceAll('{datum}', date(doc.date))
     .replaceAll('{faellig}', date(doc.due_date))
     .replaceAll('{gueltig}', date(doc.valid_until))
-    .replaceAll('{total}', money(doc.total));
+    .replaceAll('{total}', money(doc.total))
+    .replaceAll('{frist}', date(doc.due_date));
 
-  const intro = fill(doc.intro_text || layout[`${doc.type}Intro`]);
+  const intro = fill(doc.intro_text || defaultText(lang, layout, `${doc.type}Intro`));
   if (intro) {
     pdf.font(F).fontSize(10).fillColor(INK).text(intro, L, y, { width: W, lineGap: 2 });
     y = pdf.y + 14;
@@ -112,14 +116,14 @@ export function renderDocumentPdf({ doc, items, customer, settings, logo }, stre
   // ---------- Positionen ----------
   const showDiscount = layout.showDiscount && items.some((i) => Number(i.discount_pct) > 0);
   const cols = [
-    { key: 'pos', label: 'Pos.', w: 28, align: 'left' },
-    layout.showSku && { key: 'sku', label: 'Art.-Nr.', w: 62, align: 'left' },
-    { key: 'desc', label: 'Bezeichnung', w: 0, align: 'left' },
-    { key: 'qty', label: 'Menge', w: 46, align: 'right' },
-    layout.showUnit && { key: 'unit', label: 'Einh.', w: 36, align: 'left' },
-    { key: 'price', label: 'Preis', w: 62, align: 'right' },
-    showDiscount && { key: 'disc', label: 'Rabatt', w: 42, align: 'right' },
-    { key: 'amount', label: `Betrag ${cur}`, w: 74, align: 'right' },
+    { key: 'pos', label: T.pos, w: 28, align: 'left' },
+    layout.showSku && { key: 'sku', label: T.sku, w: 62, align: 'left' },
+    { key: 'desc', label: T.description, w: 0, align: 'left' },
+    { key: 'qty', label: T.qty, w: 46, align: 'right' },
+    layout.showUnit && { key: 'unit', label: T.unit, w: 36, align: 'left' },
+    { key: 'price', label: T.price, w: 62, align: 'right' },
+    showDiscount && { key: 'disc', label: T.discount, w: 42, align: 'right' },
+    { key: 'amount', label: `${T.amount} ${cur}`, w: 74, align: 'right' },
   ].filter(Boolean);
   const descCol = cols.find((col) => col.key === 'desc');
   descCol.w = W - cols.reduce((s, col) => s + col.w, 0);
@@ -172,26 +176,28 @@ export function renderDocumentPdf({ doc, items, customer, settings, logo }, stre
     pdf.text(v, R - 90, y, { width: 90 - PADX, align: 'right', lineBreak: false });
     y += bold ? 18 : 15;
   };
-  sumRow('Zwischensumme', money(t.subtotal));
-  for (const v of t.vatLines) sumRow(`MwSt ${qty(v.rate)}% auf ${money(v.base)}`, money(v.vat));
-  if (!t.vatLines.length) sumRow('MwSt', money(0));
+  if (!doc.hideVat) {
+    sumRow(T.subtotal, money(t.subtotal));
+    for (const v of t.vatLines) sumRow(`${T.vat} ${qty(v.rate)}% ${T.on} ${money(v.base)}`, money(v.vat));
+    if (!t.vatLines.length) sumRow(T.vat, money(0));
+  }
   y += 2;
   if (tpl === 'modern') {
     pdf.rect(tx - 8, y - 4, tw + 8, 24).fill(accent);
     pdf.font(FB).fontSize(11).fillColor('#ffffff');
-    pdf.text(`Total ${cur}`, tx, y + 3, { width: tw - 90, lineBreak: false });
+    pdf.text(`${T.total} ${cur}`, tx, y + 3, { width: tw - 90, lineBreak: false });
     pdf.text(money(t.total), R - 90, y + 3, { width: 90 - PADX, align: 'right', lineBreak: false });
     y += 30;
   } else {
     pdf.moveTo(tx, y - 3).lineTo(R, y - 3).lineWidth(0.9).strokeColor(tpl === 'classic' ? accent : INK).stroke();
     y += 3;
-    sumRow(`Total ${cur}`, money(t.total), true);
+    sumRow(`${T.total} ${cur}`, money(t.total), true);
     pdf.moveTo(tx, y - 2).lineTo(R, y - 2).lineWidth(0.9).strokeColor(tpl === 'classic' ? accent : INK).stroke();
     y += 8;
   }
 
   // ---------- Schlusstext & Bankverbindung ----------
-  const closing = fill(doc.footer_text || layout[`${doc.type}Closing`]);
+  const closing = fill(doc.footer_text || defaultText(lang, layout, `${doc.type}Closing`)).trim();
   if (closing) {
     pdf.font(F).fontSize(10);
     ensure(pdf.heightOfString(closing, { width: W, lineGap: 2 }) + 20);
@@ -201,12 +207,12 @@ export function renderDocumentPdf({ doc, items, customer, settings, logo }, stre
   }
   // QR-Zahlteil (Swiss QR Bill) für gebuchte Rechnungen
   const qr = doc.type === 'invoice' && layout.showQrBill && doc.number && doc.status !== 'cancelled'
-    ? buildQrBill({ doc, partner: customer, company: c }).bill : null;
+    ? buildQrBill({ doc, partner: customer, company: c, language: lang }).bill : null;
   if (doc.type === 'invoice' && layout.showBankDetails && c.iban && !qr) {
     ensure(50);
     y += 8;
-    pdf.font(FB).fontSize(9).fillColor(INK).text('Bankverbindung', L, y);
-    const bank = [c.bank_name, `IBAN ${c.iban}`, c.bic && `BIC ${c.bic}`, `Lautend auf ${c.name}`].filter(Boolean).join('  ·  ');
+    pdf.font(FB).fontSize(9).fillColor(INK).text(T.bank, L, y);
+    const bank = [c.bank_name, `IBAN ${c.iban}`, c.bic && `BIC ${c.bic}`, `${T.accountOf} ${c.name}`].filter(Boolean).join('  ·  ');
     pdf.font(F).fontSize(9).fillColor(INK).text(bank, L, pdf.y + 2, { width: W });
   }
 
@@ -228,7 +234,7 @@ export function renderDocumentPdf({ doc, items, customer, settings, logo }, stre
     pdf.moveTo(L, 790).lineTo(R, 790).lineWidth(0.5).strokeColor(tpl === 'minimal' ? LINE : accent).stroke();
     pdf.font(F).fontSize(7.5).fillColor(MUTED);
     pdf.text(footer, L, 797, { width: W - 70, height: 20, ellipsis: true });
-    pdf.text(`Seite ${i + 1} / ${range.count}`, R - 70, 797, { width: 70, align: 'right', lineBreak: false });
+    pdf.text(`${T.page} ${i + 1} / ${range.count}`, R - 70, 797, { width: 70, align: 'right', lineBreak: false });
   }
   pdf.end();
 }

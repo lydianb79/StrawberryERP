@@ -7,7 +7,7 @@ import { AutoField, DataTable, Icon, Modal, PageHead, useToast } from './ui.jsx'
  * Generische Stammdaten-Seite: Liste + Formular im Dialog.
  * props: title, subtitle, endpoint, writePerm, columns, fields, defaults, newLabel, rowActions(row, reload), exportName
  */
-export default function CrudPage({ title, subtitle, endpoint, writePerm, columns, fields, defaults = {}, newLabel = 'Neu', rowActions, exportName, canDelete = true }) {
+export default function CrudPage({ title, subtitle, endpoint, writePerm, columns, fields, defaults = {}, newLabel = 'Neu', rowActions, exportName, canDelete = true, headerActions }) {
   const { can } = useAuth();
   const toast = useToast();
   const [rows, setRows] = useState(null);
@@ -47,6 +47,7 @@ export default function CrudPage({ title, subtitle, endpoint, writePerm, columns
   return (
     <>
       <PageHead title={title} subtitle={subtitle}>
+        {writable && headerActions}
         {writable && <button className="btn primary" onClick={() => setEditing({ ...defaults })}><Icon name="plus" /> {newLabel}</button>}
       </PageHead>
       <DataTable columns={cols} rows={rows} exportName={exportName} onRowClick={(row) => setEditing({ ...row })} />

@@ -64,6 +64,98 @@ export const MIGRATIONS = [
          SELECT id, 'purchasing.write' FROM roles WHERE name IN ('Lager')`,
     ],
   },
+  {
+    version: 3,
+    name: '1.2: Mahnwesen, Gutschriften, Teillieferung, Abo-Rechnungen, Zahlungsabgleich, Storno statt Löschen, 2FA, Belegablage, Preislisten, Sprachen',
+    statements: [
+      `ALTER TABLE documents
+         MODIFY type ENUM('quote','order','invoice','purchase','credit') NOT NULL,
+         ADD COLUMN dunning_level TINYINT NOT NULL DEFAULT 0,
+         ADD COLUMN dunning_date DATE NULL,
+         ADD COLUMN dunning_fees DECIMAL(14,2) NOT NULL DEFAULT 0,
+         ADD COLUMN language CHAR(2) NOT NULL DEFAULT 'de'`,
+      `ALTER TABLE document_items
+         ADD COLUMN qty_delivered DECIMAL(14,3) NOT NULL DEFAULT 0,
+         ADD COLUMN qty_invoiced DECIMAL(14,3) NOT NULL DEFAULT 0,
+         ADD COLUMN source_item_id INT NULL`,
+      // Bestehende Aufträge: bisher galt «ganz oder gar nicht»
+      `UPDATE document_items i JOIN documents d ON d.id = i.document_id
+          SET i.qty_delivered = i.qty WHERE d.type = 'order' AND d.status IN ('delivered', 'invoiced') AND i.qty_delivered = 0`,
+      `UPDATE document_items i JOIN documents d ON d.id = i.document_id
+          SET i.qty_invoiced = i.qty WHERE d.type = 'order' AND d.status = 'invoiced' AND i.qty_invoiced = 0`,
+      `CREATE TABLE dunning_notices (
+         id INT AUTO_INCREMENT PRIMARY KEY,
+         document_id INT NOT NULL,
+         level TINYINT NOT NULL,
+         date DATE NOT NULL,
+         due_date DATE NOT NULL,
+         fee DECIMAL(14,2) NOT NULL DEFAULT 0,
+         open_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+         sent_at DATETIME NULL,
+         created_by INT NULL,
+         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+         KEY idx_dn_doc (document_id),
+         CONSTRAINT fk_dn_doc FOREIGN KEY (document_id) REFERENCES documents(id)
+       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `ALTER TABLE payments
+         MODIFY account_id INT NULL,
+         ADD COLUMN reversed_at DATETIME NULL,
+         ADD COLUMN bank_ref VARCHAR(80) NULL,
+         ADD COLUMN credit_note_id INT NULL,
+         ADD KEY idx_pay_bankref (bank_ref)`,
+      `ALTER TABLE journal_entries ADD COLUMN reversed_by INT NULL`,
+      `CREATE TABLE recurring_invoices (
+         id INT AUTO_INCREMENT PRIMARY KEY,
+         name VARCHAR(160) NOT NULL,
+         customer_id INT NOT NULL,
+         period ENUM('monthly','quarterly','halfyearly','yearly') NOT NULL DEFAULT 'monthly',
+         next_date DATE NOT NULL,
+         end_date DATE NULL,
+         auto_issue TINYINT(1) NOT NULL DEFAULT 0,
+         active TINYINT(1) NOT NULL DEFAULT 1,
+         template LONGTEXT NOT NULL,
+         last_document_id INT NULL,
+         last_run DATE NULL,
+         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+         CONSTRAINT fk_ri_customer FOREIGN KEY (customer_id) REFERENCES customers(id)
+       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `ALTER TABLE users
+         ADD COLUMN token_version INT NOT NULL DEFAULT 0,
+         ADD COLUMN totp_secret VARCHAR(64) NULL,
+         ADD COLUMN totp_enabled TINYINT(1) NOT NULL DEFAULT 0,
+         ADD COLUMN reset_token_hash CHAR(64) NULL,
+         ADD COLUMN reset_expires DATETIME NULL`,
+      `CREATE TABLE attachments (
+         id INT AUTO_INCREMENT PRIMARY KEY,
+         entity VARCHAR(30) NOT NULL,
+         entity_id INT NOT NULL,
+         filename VARCHAR(190) NOT NULL,
+         mime VARCHAR(80) NOT NULL,
+         size INT NOT NULL,
+         data LONGBLOB NOT NULL,
+         uploaded_by INT NULL,
+         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+         KEY idx_att_entity (entity, entity_id)
+       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `ALTER TABLE customers
+         ADD COLUMN discount_pct DECIMAL(5,2) NOT NULL DEFAULT 0,
+         ADD COLUMN language CHAR(2) NOT NULL DEFAULT 'de'`,
+      `ALTER TABLE suppliers ADD COLUMN language CHAR(2) NOT NULL DEFAULT 'de'`,
+      `CREATE TABLE product_prices (
+         id INT AUTO_INCREMENT PRIMARY KEY,
+         product_id INT NOT NULL,
+         customer_id INT NULL,
+         min_qty DECIMAL(14,3) NOT NULL DEFAULT 1,
+         price DECIMAL(14,2) NOT NULL,
+         KEY idx_pp_product (product_id),
+         CONSTRAINT fk_pp_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+         CONSTRAINT fk_pp_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+      `INSERT IGNORE INTO accounts (number, name, type) VALUES
+         ('3890', 'Mahngebühren und übrige Erlöse', 'revenue'), ('4800', 'Bestandesänderungen Handelswaren', 'expense')`,
+      `INSERT IGNORE INTO role_permissions (role_id, permission) SELECT id, 'banking.import' FROM roles WHERE name IN ('Buchhaltung')`,
+    ],
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 1;

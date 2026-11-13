@@ -20,6 +20,10 @@ export const DEFAULTS = {
     default_vat: 8.1,
     quote_validity_days: 30,
     vat_rates: [8.1, 2.6, 3.8, 0],
+    vat_method: 'agreed', // agreed = vereinbartes Entgelt | received = vereinnahmtes Entgelt | net = Saldosteuersatz
+    vat_net_rate: 0,
+    auto_rates: false,
+    app_url: '',
   },
   layout: {
     template: 'classic', // classic | modern | minimal
@@ -41,6 +45,8 @@ export const DEFAULTS = {
     orderClosing: '',
     invoiceIntro: 'Wir erlauben uns, Ihnen folgende Leistungen in Rechnung zu stellen:',
     invoiceClosing: 'Zahlbar bis {faellig} netto. Vielen Dank für Ihr Vertrauen.',
+    creditIntro: 'Wir schreiben Ihnen folgenden Betrag gut:',
+    creditClosing: 'Der Betrag wird mit offenen Rechnungen verrechnet oder Ihnen überwiesen.',
     purchaseIntro: 'Wir bestellen bei Ihnen gemäss nachstehender Aufstellung:',
     purchaseClosing: 'Bitte bestätigen Sie uns den Auftrag mit Liefertermin.',
     footerText: '',
@@ -50,6 +56,7 @@ export const DEFAULTS = {
     orderPrefix: 'AB',
     invoicePrefix: 'RE',
     purchasePrefix: 'BE',
+    creditPrefix: 'GS',
     digits: 4,
     includeYear: true,
   },
@@ -64,6 +71,20 @@ export const DEFAULTS = {
     yearResult: '2979',
     fxGain: '6990',
     fxLoss: '6940',
+    dunningFees: '3890',
+    inventory: '1200',
+    inventoryChange: '4800',
+  },
+  dunning: {
+    paymentDays: 10, // neue Zahlungsfrist ab Mahndatum
+    levels: [
+      { title: 'Zahlungserinnerung', days: 10, fee: 0,
+        text: 'Sicher ist es Ihrer Aufmerksamkeit entgangen, dass die nachstehende Rechnung noch offen ist. Wir bitten Sie, den Betrag bis {frist} zu begleichen. Sollte sich Ihre Zahlung mit diesem Schreiben gekreuzt haben, betrachten Sie es bitte als gegenstandslos.' },
+      { title: '1. Mahnung', days: 10, fee: 20,
+        text: 'Trotz unserer Zahlungserinnerung ist die nachstehende Rechnung weiterhin offen. Wir bitten Sie, den Gesamtbetrag inklusive Mahngebühr bis {frist} zu überweisen.' },
+      { title: '2. Mahnung', days: 10, fee: 30,
+        text: 'Leider haben wir auf unsere bisherigen Schreiben keine Zahlung erhalten. Wir fordern Sie letztmals auf, den Gesamtbetrag bis {frist} zu begleichen. Andernfalls sehen wir uns gezwungen, rechtliche Schritte einzuleiten.' },
+    ],
   },
   mail: {
     host: '',
@@ -81,6 +102,10 @@ export const DEFAULTS = {
     orderBody: 'Guten Tag\n\nVielen Dank für Ihren Auftrag. Im Anhang erhalten Sie die Auftragsbestätigung {nummer}.\n\nFreundliche Grüsse\n{firma}',
     invoiceSubject: 'Rechnung {nummer}',
     invoiceBody: 'Guten Tag\n\nIm Anhang erhalten Sie unsere Rechnung {nummer} über {waehrung} {total}, zahlbar bis {faellig}.\n\nFreundliche Grüsse\n{firma}',
+    creditSubject: 'Gutschrift {nummer}',
+    creditBody: 'Guten Tag\n\nIm Anhang erhalten Sie unsere Gutschrift {nummer} über {waehrung} {total}.\n\nFreundliche Grüsse\n{firma}',
+    dunningSubject: '{titel} zu Rechnung {nummer}',
+    dunningBody: 'Guten Tag\n\nIm Anhang erhalten Sie unsere {titel} zur Rechnung {nummer}. Der offene Betrag beträgt {waehrung} {total}.\n\nFreundliche Grüsse\n{firma}',
     purchaseSubject: 'Bestellung {nummer}',
     purchaseBody: 'Guten Tag\n\nIm Anhang erhalten Sie unsere Bestellung {nummer}. Bitte bestätigen Sie uns den Liefertermin.\n\nFreundliche Grüsse\n{firma}',
   },

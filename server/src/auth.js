@@ -33,11 +33,13 @@ export const PERMISSIONS = [
   { key: 'accounting.write', group: 'Buchhaltung', label: 'Manuell buchen, Kontenplan pflegen' },
   { key: 'accounting.close', group: 'Buchhaltung', label: 'Jahresabschluss durchführen' },
   { key: 'reports.read', group: 'Auswertungen', label: 'Reports & Kennzahlen ansehen' },
+  { key: 'banking.import', group: 'Debitoren', label: 'Kontoauszüge einlesen und Zahlungen zuordnen' },
   { key: 'admin.users', group: 'Administration', label: 'Benutzer & Rollen verwalten' },
   { key: 'admin.settings', group: 'Administration', label: 'Firmendaten, Layout & Protokoll' },
 ];
 
-export const signToken = (userId) => jwt.sign({ uid: userId }, SECRET, { expiresIn: '12h' });
+/** tv = Token-Version des Benutzers: ändert sie sich (Passwortwechsel, Reset), werden alle bestehenden Sitzungen ungültig. */
+export const signToken = (userId, tokenVersion = 0) => jwt.sign({ uid: userId, tv: tokenVersion }, SECRET, { expiresIn: '12h' });
 
 export const cookieOptions = () => ({
   httpOnly: true,
@@ -49,7 +51,7 @@ export const cookieOptions = () => ({
 
 export async function loadUser(id) {
   const user = await one(
-    `SELECT u.id, u.email, u.name, u.active, u.role_id, r.name AS role
+    `SELECT u.id, u.email, u.name, u.active, u.role_id, u.token_version, u.totp_enabled, r.name AS role
        FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = ?`,
     [id],
   );
@@ -70,6 +72,7 @@ export const authenticate = h(async (req, _res, next) => {
   }
   const user = await loadUser(payload.uid);
   if (!user) throw new HttpError(401, 'Benutzer deaktiviert');
+  if ((payload.tv ?? 0) !== user.token_version) throw new HttpError(401, 'Sitzung wurde beendet – bitte neu anmelden');
   req.user = user;
   next();
 });

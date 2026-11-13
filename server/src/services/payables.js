@@ -1,11 +1,11 @@
 import { q, one } from '../db.js';
 import { HttpError, round2, today, addDays, needDate, isDate } from '../util.js';
 import { getSettings } from './settings.js';
-import { postEntry, deleteEntriesByRef, accountIdByNumber } from './ledger.js';
+import { postEntry, reverseEntriesByRef, accountIdByNumber } from './ledger.js';
 import { resolveCurrency, toBase, fxLines } from './currency.js';
 import { openItemBase } from './documents.js';
 
-const payStatus = (total, paid) => (paid <= 0 ? 'open' : paid + 0.005 >= total ? 'paid' : 'partial');
+const payStatus = (total, paid) => (paid <= 0.005 ? 'open' : paid + 0.005 >= total ? 'paid' : 'partial');
 
 async function validate(conn, data, current) {
   const supplier = await one('SELECT * FROM suppliers WHERE id = ?', [data.supplier_id], conn);
@@ -63,9 +63,11 @@ async function lock(conn, id) {
 
 export async function updateSupplierInvoice(conn, user, id, data) {
   const si = await lock(conn, id);
+  if (si.status === 'cancelled') throw new HttpError(400, 'Stornierte Rechnungen können nicht geändert werden.');
   if (si.paid_amount > 0) throw new HttpError(400, 'Rechnungen mit Zahlungen können nicht mehr geändert werden.');
   const v = await validate(conn, data, si);
-  await deleteEntriesByRef(conn, 'supplier_invoice', id);
+  // Korrektur = Gegenbuchung der bisherigen Buchung und Neubuchung (nichts wird gelöscht)
+  await reverseEntriesByRef(conn, 'supplier_invoice', id, { user_id: user?.id, text: `Korrektur Lieferantenrechnung ${si.number}` });
   await q(
     `UPDATE supplier_invoices SET supplier_id=?, number=?, date=?, due_date=?, description=?, expense_account_id=?, net=?, vat=?, total=?,
             currency=?, exchange_rate=?, cost_center_id=? WHERE id=?`,
@@ -74,17 +76,19 @@ export async function updateSupplierInvoice(conn, user, id, data) {
   await post(conn, user, id, v);
 }
 
-export async function deleteSupplierInvoice(conn, id) {
+/** Lieferantenrechnung stornieren: Gegenbuchung, der Beleg bleibt als storniert erhalten. */
+export async function cancelSupplierInvoice(conn, user, id) {
   const si = await lock(conn, id);
-  if (si.paid_amount > 0) throw new HttpError(400, 'Bitte zuerst die erfassten Zahlungen entfernen.');
-  await deleteEntriesByRef(conn, 'supplier_invoice', id);
-  await q('DELETE FROM supplier_invoices WHERE id = ?', [id], conn);
+  if (si.status === 'cancelled') throw new HttpError(400, 'Diese Rechnung ist bereits storniert.');
+  if (si.paid_amount > 0) throw new HttpError(400, 'Bitte zuerst die erfassten Zahlungen stornieren.');
+  await reverseEntriesByRef(conn, 'supplier_invoice', id, { user_id: user?.id, text: `Storno Lieferantenrechnung ${si.number}` });
+  await q("UPDATE supplier_invoices SET status = 'cancelled' WHERE id = ?", [id], conn);
   return si;
 }
 
 export async function addSupplierPayment(conn, user, id, data) {
   const si = await lock(conn, id);
-  if (si.status === 'paid') throw new HttpError(400, 'Diese Rechnung ist bereits bezahlt.');
+  if (!['open', 'partial'].includes(si.status)) throw new HttpError(400, 'Auf diese Rechnung kann keine Zahlung erfasst werden.');
   const amount = round2(data.amount);
   const open = round2(si.total - si.paid_amount);
   if (amount <= 0) throw new HttpError(400, 'Der Betrag muss grösser als 0 sein.');
@@ -93,7 +97,7 @@ export async function addSupplierPayment(conn, user, id, data) {
   const { accounting } = await getSettings(conn);
   const account_id = data.account_id ? Number(data.account_id) : await accountIdByNumber(conn, accounting.bank);
   const payRate = si.exchange_rate === 1 ? 1 : (Number(data.exchange_rate) > 0 ? Number(data.exchange_rate) : si.exchange_rate);
-  const previous = await q('SELECT amount FROM payments WHERE supplier_invoice_id = ?', [id], conn);
+  const previous = await q('SELECT amount FROM payments WHERE supplier_invoice_id = ? AND reversed_at IS NULL', [id], conn);
   const cleared = openItemBase(si.total, si.exchange_rate, previous, amount);
   const cash = toBase(amount, payRate);
   const res = await q(
@@ -108,12 +112,14 @@ export async function addSupplierPayment(conn, user, id, data) {
   return res.insertId;
 }
 
-export async function removeSupplierPayment(conn, paymentId) {
+/** Zahlung stornieren: Gegenbuchung statt Löschen. */
+export async function reverseSupplierPayment(conn, user, paymentId) {
   const pay = await one("SELECT * FROM payments WHERE id = ? AND kind = 'payable'", [paymentId], conn);
   if (!pay) throw new HttpError(404, 'Zahlung nicht gefunden');
+  if (pay.reversed_at) throw new HttpError(400, 'Diese Zahlung ist bereits storniert.');
   const si = await lock(conn, pay.supplier_invoice_id);
-  await deleteEntriesByRef(conn, 'payment', pay.id);
-  await q('DELETE FROM payments WHERE id = ?', [pay.id], conn);
+  await reverseEntriesByRef(conn, 'payment', pay.id, { user_id: user?.id, text: `Storno Zahlung ${si.number}` });
+  await q('UPDATE payments SET reversed_at = NOW() WHERE id = ?', [pay.id], conn);
   const paid = round2(si.paid_amount - pay.amount);
   await q('UPDATE supplier_invoices SET paid_amount = ?, status = ? WHERE id = ?', [paid, payStatus(si.total, paid), si.id], conn);
   return si;

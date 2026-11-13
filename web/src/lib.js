@@ -37,6 +37,7 @@ export const DOC = {
   quote: { path: 'offerten', title: 'Offerten', single: 'Offerte', perm: 'quotes', dateLabel: 'Gültig bis' },
   order: { path: 'auftraege', title: 'Aufträge', single: 'Auftrag', perm: 'orders' },
   invoice: { path: 'rechnungen', title: 'Rechnungen', single: 'Rechnung', perm: 'invoices', dateLabel: 'Fällig am' },
+  credit: { path: 'gutschriften', title: 'Gutschriften', single: 'Gutschrift', perm: 'invoices' },
   purchase: { path: 'bestellungen', title: 'Bestellungen', single: 'Bestellung', perm: 'purchasing' },
 };
 
@@ -53,9 +54,27 @@ export const STATUS = {
   paid: ['Bezahlt', 'green'],
   overdue: ['Überfällig', 'red'],
   ordered: ['Bestellt', 'blue'],
+  'order:partly': ['Teilweise geliefert', 'amber'],
+  'credit:open': ['Guthaben offen', 'amber'],
+  'credit:paid': ['Verrechnet / ausbezahlt', 'green'],
   partly: ['Teilweise erhalten', 'amber'],
   received: ['Erhalten', 'green'],
 };
+
+export const LANGUAGES = { de: 'Deutsch', fr: 'Französisch', it: 'Italienisch', en: 'Englisch' };
+
+/**
+ * Preis eines Artikels für einen Kunden und eine Menge: kundenspezifischer Preis vor allgemeinem Staffelpreis vor Listenpreis.
+ * prices: Zeilen aus product_prices (customer_id leer = gilt für alle).
+ */
+export function priceFor(product, prices, customerId, qty) {
+  const n = Number(qty) || 0;
+  const fits = (prices || []).filter((p) => p.product_id === product.id && p.min_qty <= Math.max(n, 0.000001));
+  const best = (list) => list.sort((a, b) => b.min_qty - a.min_qty)[0];
+  const own = best(fits.filter((p) => p.customer_id && String(p.customer_id) === String(customerId)));
+  const general = best(fits.filter((p) => !p.customer_id));
+  return (own || general)?.price ?? product.sale_price;
+}
 
 export const ACCOUNT_TYPES = { asset: 'Aktiven', liability: 'Fremdkapital', equity: 'Eigenkapital', revenue: 'Ertrag', expense: 'Aufwand' };
 

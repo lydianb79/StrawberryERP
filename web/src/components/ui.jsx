@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { STATUS, downloadCsv } from '../lib.js';
 
 // ---------- Icons (24er Raster, Linienstil) ----------
@@ -39,6 +39,12 @@ const PATHS = {
   coins: 'M9 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12M15.500 10.200A6 6 0 1 1 10.200 21',
   target: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8',
   refresh: 'M20 11a8 8 0 0 0-14.900-3M4 4v4h4M4 13a8 8 0 0 0 14.900 3M20 20v-4h-4',
+  bell: 'M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4',
+  repeat: 'M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3',
+  clip: 'M20 11l-8.500 8.500a5 5 0 0 1-7-7L13 4a3.500 3.500 0 0 1 5 5l-8.500 8.500a2 2 0 0 1-3-3L14 7',
+  undo: 'M4 8h10a6 6 0 0 1 0 12H8M4 8l4-4M4 8l4 4',
+  tag: 'M3 12V4h8l10 10-8 8zM7.500 7.500h.010',
+  bank: 'M3 10l9-6 9 6M5 10v8M9.500 10v8M14.500 10v8M19 10v8M3 20h18',
 };
 
 export function Icon({ name }) {
@@ -138,22 +144,35 @@ export function AutoField({ field, value, onChange, disabled }) {
   return <Field label={label + (required ? ' *' : '')} hint={hint} className={cls}>{input}</Field>;
 }
 
-export function StatusBadge({ status, overdue }) {
-  const [label, color] = STATUS[overdue ? 'overdue' : status] || [status, ''];
+export function StatusBadge({ status, overdue, type }) {
+  const [label, color] = STATUS[overdue ? 'overdue' : `${type}:${status}`] || STATUS[overdue ? 'overdue' : status] || [status, ''];
   return <span className={`badge ${color}`}>{label}</span>;
 }
 
 // ---------- Datentabelle ----------
+const PAGE_SIZE = 50;
+
 /**
  * columns: [{ key, label, render?, num?, csv? }]
+ * Grosse Listen werden seitenweise angezeigt. Mit onSearch sucht die Tabelle auf dem Server statt in den geladenen Zeilen.
  */
-export function DataTable({ columns, rows, onRowClick, empty = 'Keine Einträge vorhanden.', footer, exportName, toolbar, searchable = true }) {
+export function DataTable({ columns, rows, onRowClick, empty = 'Keine Einträge vorhanden.', footer, exportName, toolbar, searchable = true, onSearch, note }) {
   const [term, setTerm] = useState('');
+  const [page, setPage] = useState(0);
+  useEffect(() => {
+    if (!onSearch) return undefined;
+    const timer = setTimeout(() => onSearch(term.trim()), 350);
+    return () => clearTimeout(timer);
+  }, [term]); // eslint-disable-line react-hooks/exhaustive-deps
   const filtered = useMemo(() => {
-    if (!term.trim() || !rows) return rows || [];
+    if (onSearch || !term.trim() || !rows) return rows || [];
     const t = term.toLowerCase();
     return rows.filter((r) => Object.values(r).some((v) => v != null && typeof v !== 'object' && String(v).toLowerCase().includes(t)));
-  }, [rows, term]);
+  }, [rows, term, onSearch]);
+  useEffect(() => { setPage(0); }, [term, rows]);
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const current = Math.min(page, pages - 1);
+  const visible = filtered.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE);
   return (
     <div className="card">
       {(searchable || toolbar || exportName) && (
@@ -161,7 +180,7 @@ export function DataTable({ columns, rows, onRowClick, empty = 'Keine Einträge 
           {searchable && <input className="input search" placeholder="Suchen…" value={term} onChange={(e) => setTerm(e.target.value)} />}
           {toolbar}
           <div className="spacer" />
-          <span className="muted small">{filtered.length} {filtered.length === 1 ? 'Eintrag' : 'Einträge'}</span>
+          <span className="muted small">{filtered.length} {filtered.length === 1 ? 'Eintrag' : 'Einträge'}{note ? ` · ${note}` : ''}</span>
           {exportName && (
             <button className="btn sm" onClick={() => downloadCsv(`${exportName}.csv`, columns.filter((c) => c.label), filtered)}>
               <Icon name="download" /> CSV
@@ -175,7 +194,7 @@ export function DataTable({ columns, rows, onRowClick, empty = 'Keine Einträge 
             <tr>{columns.map((c) => <th key={c.key} className={c.num ? 'num' : ''}>{c.label}</th>)}</tr>
           </thead>
           <tbody>
-            {filtered.map((row, i) => (
+            {visible.map((row, i) => (
               <tr key={row.id ?? i} className={onRowClick ? 'clickable' : ''} onClick={onRowClick ? () => onRowClick(row) : undefined}>
                 {columns.map((c) => (
                   <td key={c.key} className={`${c.num ? 'num' : ''} ${c.key === '_actions' ? 'actions' : ''}`}
@@ -191,6 +210,64 @@ export function DataTable({ columns, rows, onRowClick, empty = 'Keine Einträge 
         {rows && filtered.length === 0 && <div className="empty">{empty}</div>}
         {!rows && <div className="empty">Lädt…</div>}
       </div>
+      {pages > 1 && (
+        <div className="pager no-print">
+          <button className="btn sm" disabled={current === 0} onClick={() => setPage(current - 1)}>Zurück</button>
+          <span className="muted small">Seite {current + 1} von {pages} · Zeilen {current * PAGE_SIZE + 1}–{Math.min(filtered.length, (current + 1) * PAGE_SIZE)}</span>
+          <button className="btn sm" disabled={current >= pages - 1} onClick={() => setPage(current + 1)}>Weiter</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Auswahlfeld mit Suche – für lange Listen (Kunden, Artikel). options: [{ value, label, hint? }]
+ */
+export function Combo({ options, value, onChange, placeholder = 'Suchen…', disabled, emptyLabel }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [box, setBox] = useState(null);
+  const ref = useRef(null);
+  const selected = options.find((o) => String(o.value) === String(value));
+  const matches = useMemo(() => {
+    const t = query.trim().toLowerCase();
+    const list = t ? options.filter((o) => `${o.label} ${o.hint || ''}`.toLowerCase().includes(t)) : options;
+    return list.slice(0, 60);
+  }, [options, query]);
+  const show = () => {
+    if (disabled) return;
+    const r = ref.current.getBoundingClientRect();
+    setBox({ left: r.left, top: r.bottom + 2, width: Math.max(r.width, 260) });
+    setQuery('');
+    setOpen(true);
+  };
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (e) => { if (!e.target.closest?.('.combo-list')) setOpen(false); };
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
+  }, [open]);
+  const pick = (v) => { onChange(v); setOpen(false); };
+  return (
+    <div className="combo" ref={ref}>
+      <input className="input" disabled={disabled} placeholder={selected ? selected.label : placeholder} title={selected?.label}
+        value={open ? query : selected?.label || ''} onFocus={show} onChange={(e) => { setQuery(e.target.value); if (!open) show(); }}
+        onBlur={() => setTimeout(() => setOpen(false), 160)}
+        onKeyDown={(e) => { if (e.key === 'Escape') { setOpen(false); e.target.blur(); } if (e.key === 'Enter' && open && matches[0]) { e.preventDefault(); pick(matches[0].value); e.target.blur(); } }} />
+      {open && box && (
+        <div className="combo-list" style={{ left: box.left, top: box.top, width: box.width }}>
+          {emptyLabel && <div className="combo-item muted" onMouseDown={(e) => { e.preventDefault(); pick(''); }}>{emptyLabel}</div>}
+          {matches.map((o) => (
+            <div key={o.value} className={`combo-item ${String(o.value) === String(value) ? 'active' : ''}`} onMouseDown={(e) => { e.preventDefault(); pick(o.value); }}>
+              {o.label}{o.hint && <span className="muted small"> · {o.hint}</span>}
+            </div>
+          ))}
+          {!matches.length && <div className="combo-item muted">Keine Treffer</div>}
+          {matches.length === 60 && <div className="combo-item muted small">Weitere Treffer – bitte Suche verfeinern</div>}
+        </div>
+      )}
     </div>
   );
 }

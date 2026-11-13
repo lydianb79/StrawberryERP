@@ -190,6 +190,12 @@ table.table { width: 100%; border-collapse: collapse; }
 .statement .section td { font-weight: 700; background: #f6f7f9; }
 .statement .total td { font-weight: 700; border-top: 1px solid var(--ink-2); }
 .statement .grand td { font-weight: 750; font-size: 15px; border-top: 2px solid var(--ink); background: var(--brand-soft); }
+.pager { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 10px 14px; border-top: 1px solid var(--line-2); }
+.combo { position: relative; min-width: 0; }
+.combo-list { position: fixed; z-index: 90; max-height: 300px; overflow-y: auto; background: #fff; border: 1px solid #d3d8e0; border-radius: 8px; box-shadow: 0 12px 30px rgba(16, 24, 40, .18); }
+.combo-item { padding: 7px 10px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.combo-item:hover, .combo-item.active { background: var(--brand-soft); }
+.strike { text-decoration: line-through; color: var(--muted); }
 .code { margin: 6px 0 8px; padding: 10px 12px; background: #171b26; color: #e6e9f0; border-radius: 8px; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-x: auto; }
 .perm-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 24px; }
 .perm-grid h3 { margin-bottom: 6px; }

@@ -1,5 +1,5 @@
 import { q, one } from '../db.js';
-import { HttpError, round2, addDays } from '../util.js';
+import { HttpError, round2, addDays, today } from '../util.js';
 import { getSettings } from './settings.js';
 
 export async function fiscalYearFor(conn, date) {
@@ -51,6 +51,33 @@ export async function deleteEntriesByRef(conn, ref_type, ref_id) {
   const closed = rows.find((r) => r.status !== 'open');
   if (closed) throw new HttpError(400, `Die Buchung liegt im abgeschlossenen Geschäftsjahr ${closed.name} und kann nicht geändert werden.`);
   if (rows.length) await q('DELETE FROM journal_entries WHERE id IN (?)', [rows.map((r) => r.id)], conn);
+}
+
+/**
+ * Storniert eine Buchung durch eine Gegenbuchung (Soll und Haben vertauscht) – Buchungen werden nie gelöscht.
+ * Die Gegenbuchung trägt das Datum der Originalbuchung, solange deren Geschäftsjahr offen ist, sonst das heutige Datum.
+ */
+export async function reverseEntry(conn, entry, { user_id = null, text, date } = {}) {
+  const lines = await q('SELECT account_id, debit, credit, cost_center_id FROM journal_lines WHERE entry_id = ?', [entry.id], conn);
+  let when = date || entry.date;
+  if (!date) {
+    const fy = await one('SELECT status FROM fiscal_years WHERE ? BETWEEN start_date AND end_date', [when], conn);
+    if (!fy || fy.status !== 'open') when = today();
+  }
+  const id = await postEntry(conn, {
+    date: when, text: text || `Storno: ${entry.text}`.slice(0, 255), ref_type: `${entry.ref_type}_storno`.slice(0, 30), ref_id: entry.ref_id, user_id,
+    lines: lines.map((l) => ({ account_id: l.account_id, debit: l.credit, credit: l.debit, cost_center_id: l.cost_center_id })),
+  });
+  await q('UPDATE journal_entries SET reversed_by = ? WHERE id = ?', [id, entry.id], conn);
+  await q('UPDATE journal_entries SET reversed_by = ? WHERE id = ?', [entry.id, id], conn);
+  return id;
+}
+
+/** Storniert alle noch nicht stornierten Buchungen zu einem Beleg. */
+export async function reverseEntriesByRef(conn, ref_type, ref_id, opts = {}) {
+  const entries = await q('SELECT * FROM journal_entries WHERE ref_type = ? AND ref_id = ? AND reversed_by IS NULL ORDER BY id', [ref_type, ref_id], conn);
+  for (const e of entries) await reverseEntry(conn, e, opts);
+  return entries.length;
 }
 
 /** Kontensalden eines Geschäftsjahres. balance = Soll − Haben. */

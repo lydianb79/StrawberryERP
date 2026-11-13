@@ -20,7 +20,7 @@ export function Users() {
   const save = async (e) => {
     e.preventDefault();
     try {
-      const body = { name: editing.name, email: editing.email, role_id: editing.role_id, active: editing.active, password: editing.password || undefined };
+      const body = { name: editing.name, email: editing.email, role_id: editing.role_id, active: editing.active, password: editing.password || undefined, reset2fa: editing.reset2fa || undefined };
       if (editing.id) await api(`/users/${editing.id}`, { method: 'PUT', body });
       else await api('/users', { method: 'POST', body });
       toast('Benutzer gespeichert.');
@@ -43,6 +43,7 @@ export function Users() {
         { key: 'name', label: 'Name', render: (r) => <b>{r.name}</b> },
         { key: 'email', label: 'E-Mail' },
         { key: 'role', label: 'Rolle', render: (r) => <span className="badge blue">{r.role}</span> },
+        { key: 'totp_enabled', label: '2-Faktor', render: (r) => (r.totp_enabled ? <span className="badge green">Aktiv</span> : <span className="muted">–</span>) },
         { key: 'last_login', label: 'Letzte Anmeldung', render: (r) => fmtDateTime(r.last_login) },
         { key: 'active', label: 'Status', render: (r) => (r.active ? <span className="badge green">Aktiv</span> : <span className="badge">Deaktiviert</span>) },
       ]} />
@@ -55,6 +56,7 @@ export function Users() {
               <AutoField field={{ label: 'Rolle', type: 'select', required: true, options: roles.map((r) => ({ value: r.id, label: r.name })) }} value={editing.role_id} onChange={set('role_id')} />
               <AutoField field={{ label: editing.id ? 'Neues Passwort' : 'Passwort', type: 'password', required: !editing.id, hint: editing.id ? 'Leer lassen = unverändert' : 'Mindestens 10 Zeichen' }} value={editing.password} onChange={set('password')} />
               <AutoField field={{ label: 'Konto aktiv', type: 'checkbox' }} value={editing.active} onChange={set('active')} />
+              {!!editing.totp_enabled && <AutoField field={{ label: 'Zwei-Faktor-Anmeldung zurücksetzen (Gerät verloren)', type: 'checkbox', span: 'all' }} value={editing.reset2fa} onChange={set('reset2fa')} />}
             </div>
             <div className="row" style={{ marginTop: 20 }}>
               {editing.id && editing.id !== me.id && <button type="button" className="btn danger" onClick={remove}><Icon name="trash" /> Löschen</button>}
@@ -191,12 +193,18 @@ export function CompanySettings() {
         { name: 'bic', label: 'BIC / SWIFT' }, { name: 'currency', label: 'Basiswährung', hint: 'Währung der Buchhaltung – nach den ersten Buchungen nicht mehr ändern' }, { name: 'default_payment_terms', label: 'Zahlungsfrist Standard (Tage)', type: 'number' },
         { name: 'quote_validity_days', label: 'Gültigkeit Offerten (Tage)', type: 'number' }, { name: 'default_vat', label: 'Standard-MwSt-Satz (%)', type: 'number' },
         { name: 'vat_rates', label: 'MwSt-Sätze (%)', list: true, hint: 'Mit Strichpunkt getrennt' },
+        { name: 'vat_method', label: 'MwSt-Abrechnungsmethode', type: 'select', required: true, options: [
+          { value: 'agreed', label: 'Effektiv, vereinbartes Entgelt' }, { value: 'received', label: 'Effektiv, vereinnahmtes Entgelt' }, { value: 'net', label: 'Saldosteuersatz' }] },
+        { name: 'vat_net_rate', label: 'Saldosteuersatz (%)', type: 'number', hint: 'Nur bei Methode Saldosteuersatz' },
+        { name: 'app_url', label: 'Adresse der Anwendung', placeholder: 'https://erp.ihre-firma.ch', span: 2, hint: 'Für Links in E-Mails (Passwort zurücksetzen)' },
+        { name: 'auto_rates', label: 'Fremdwährungskurse täglich automatisch aktualisieren (EZB)', type: 'checkbox', span: 'all' },
       ]} />
       <SettingsCard title="Nummernkreise" settingKey="numbering" cols={4}
         hint="Belegnummern werden fortlaufend vergeben, z.B. RE-2026-0001. Mit Jahreszahl beginnt die Zählung in jedem Jahr neu."
         fields={[
           { name: 'quotePrefix', label: 'Präfix Offerten', required: true }, { name: 'orderPrefix', label: 'Präfix Aufträge', required: true },
           { name: 'invoicePrefix', label: 'Präfix Rechnungen', required: true }, { name: 'purchasePrefix', label: 'Präfix Bestellungen', required: true },
+          { name: 'creditPrefix', label: 'Präfix Gutschriften', required: true },
           { name: 'digits', label: 'Anzahl Stellen', type: 'number' },
           { name: 'includeYear', label: 'Jahreszahl in der Nummer', type: 'checkbox', span: 2 },
         ]} />
@@ -206,7 +214,8 @@ export function CompanySettings() {
           fields={[
             acc('receivables', 'Debitoren'), acc('payables', 'Kreditoren'), acc('bank', 'Standard-Zahlungskonto'), acc('revenue', 'Erlöskonto'),
             acc('vatPayable', 'Geschuldete MwSt'), acc('vatInput', 'Vorsteuer'), acc('retainedEarnings', 'Gewinnvortrag'), acc('yearResult', 'Jahresgewinn/-verlust'),
-            acc('fxGain', 'Kursgewinne'), acc('fxLoss', 'Kursverluste'),
+            acc('fxGain', 'Kursgewinne'), acc('fxLoss', 'Kursverluste'), acc('dunningFees', 'Mahngebühren'),
+            acc('inventory', 'Warenvorräte'), acc('inventoryChange', 'Bestandesänderungen'),
           ]} />
       )}
     </div>
@@ -352,13 +361,15 @@ export function LayoutSettings() {
           <div className="card">
             <div className="card-head"><h2>Standardtexte</h2></div>
             <div className="card-body stack">
-              <p className="muted small" style={{ margin: 0 }}>Platzhalter: {'{kunde}'}, {'{nummer}'}, {'{datum}'}, {'{faellig}'}, {'{gueltig}'}, {'{total}'}</p>
+              <p className="muted small" style={{ margin: 0 }}>Platzhalter: {'{kunde}'}, {'{nummer}'}, {'{datum}'}, {'{faellig}'}, {'{gueltig}'}, {'{total}'}. Diese Texte gelten für deutsche Belege; für Französisch, Italienisch und Englisch werden mitgelieferte Standardtexte verwendet.</p>
               {textField('quoteIntro', 'Offerte – Einleitung')}
               {textField('quoteClosing', 'Offerte – Schlusstext')}
               {textField('orderIntro', 'Auftragsbestätigung – Einleitung')}
               {textField('orderClosing', 'Auftragsbestätigung – Schlusstext')}
               {textField('invoiceIntro', 'Rechnung – Einleitung')}
               {textField('invoiceClosing', 'Rechnung – Schlusstext')}
+              {textField('creditIntro', 'Gutschrift – Einleitung')}
+              {textField('creditClosing', 'Gutschrift – Schlusstext')}
               {textField('purchaseIntro', 'Bestellung – Einleitung')}
               {textField('purchaseClosing', 'Bestellung – Schlusstext')}
               {textField('footerText', 'Fusszeile (leer = Firmenangaben)')}
@@ -371,7 +382,7 @@ export function LayoutSettings() {
             <h2>Vorschau</h2><div className="spacer" />
             {previewUrl && <a className="btn sm" href={previewUrl} target="_blank" rel="noreferrer"><Icon name="pdf" /> In neuem Tab</a>}
             <select className="input" style={{ width: 200 }} value={type} onChange={(e) => setType(e.target.value)}>
-              <option value="invoice">Rechnung</option><option value="quote">Offerte</option><option value="order">Auftragsbestätigung</option><option value="purchase">Bestellung</option>
+              <option value="invoice">Rechnung</option><option value="quote">Offerte</option><option value="order">Auftragsbestätigung</option><option value="credit">Gutschrift</option><option value="purchase">Bestellung</option>
             </select>
           </div>
           <div className="card-body">
@@ -403,7 +414,7 @@ export function AuditLog() {
 }
 
 // ---------- E-Mail (SMTP) ----------
-const MAIL_TEXTS = [['quote', 'Offerte'], ['order', 'Auftragsbestätigung'], ['invoice', 'Rechnung'], ['purchase', 'Bestellung']];
+const MAIL_TEXTS = [['quote', 'Offerte'], ['order', 'Auftragsbestätigung'], ['invoice', 'Rechnung'], ['credit', 'Gutschrift'], ['dunning', 'Mahnung'], ['purchase', 'Bestellung']];
 
 export function MailSettings() {
   const { settings, reloadSettings } = useAuth();

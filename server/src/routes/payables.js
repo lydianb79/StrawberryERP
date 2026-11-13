@@ -9,7 +9,8 @@ const r = Router();
 const SELECT = `SELECT si.*, s.company AS supplier_name, a.number AS account_number, a.name AS account_name,
                        ROUND(si.total * si.exchange_rate, 2) AS base_total, ROUND((si.total - si.paid_amount) * si.exchange_rate, 2) AS base_open,
                        po.number AS purchase_order_number,
-                       (si.status <> 'paid' AND si.due_date < CURDATE()) AS overdue
+                       (si.status IN ('open','partial') AND si.due_date < CURDATE()) AS overdue,
+                       (SELECT COUNT(*) FROM attachments t WHERE t.entity = 'supplier_invoice' AND t.entity_id = si.id) AS attachment_count
                   FROM supplier_invoices si JOIN suppliers s ON s.id = si.supplier_id JOIN accounts a ON a.id = si.expense_account_id
                   LEFT JOIN documents po ON po.id = si.purchase_order_id`;
 
@@ -24,7 +25,7 @@ async function detail(id) {
 
 r.get('/', can('payables.read'), h(async (req, res) => {
   const where = [], params = [];
-  if (req.query.open === '1') where.push("si.status <> 'paid'");
+  if (req.query.open === '1') where.push("si.status IN ('open','partial')");
   if (req.query.q) { where.push('(si.number LIKE ? OR s.company LIKE ? OR si.description LIKE ?)'); params.push(...Array(3).fill(`%${req.query.q}%`)); }
   res.json(await q(`${SELECT} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY si.date DESC, si.id DESC LIMIT 1000`, params));
 }));
@@ -44,8 +45,8 @@ r.put('/:id', can('payables.write'), h(async (req, res) => {
 }));
 
 r.delete('/:id', can('payables.write'), h(async (req, res) => {
-  const si = await tx((conn) => svc.deleteSupplierInvoice(conn, req.params.id));
-  await audit(req, 'delete', 'supplier_invoice', si.id, si.number);
+  const si = await tx((conn) => svc.cancelSupplierInvoice(conn, req.user, req.params.id));
+  await audit(req, 'cancel', 'supplier_invoice', si.id, si.number);
   res.status(204).end();
 }));
 
@@ -56,8 +57,8 @@ r.post('/:id/payments', can('payables.write'), h(async (req, res) => {
 }));
 
 r.delete('/payments/:paymentId', can('payables.write'), h(async (req, res) => {
-  const si = await tx((conn) => svc.removeSupplierPayment(conn, req.params.paymentId));
-  await audit(req, 'payment-delete', 'supplier_invoice', si.id, si.number);
+  const si = await tx((conn) => svc.reverseSupplierPayment(conn, req.user, req.params.paymentId));
+  await audit(req, 'payment-storno', 'supplier_invoice', si.id, si.number);
   res.json(await detail(si.id));
 }));
 

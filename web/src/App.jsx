@@ -3,7 +3,8 @@ import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { api } from './lib.js';
 import { AuthCtx, useAuth } from './auth.js';
 import { Icon, Modal, Field, useToast } from './components/ui.jsx';
-import Login from './pages/Login.jsx';
+import Login, { ResetPassword } from './pages/Login.jsx';
+import { Recurring } from './pages/Billing.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import { Customers, Suppliers, Accounts, CostCenters, Currencies } from './pages/MasterData.jsx';
 import { Products, StockMovements } from './pages/Inventory.jsx';
@@ -22,6 +23,8 @@ const NAV = [
     { to: '/offerten', label: 'Offerten', icon: 'file', perm: 'quotes.read' },
     { to: '/auftraege', label: 'Aufträge', icon: 'cart', perm: 'orders.read' },
     { to: '/rechnungen', label: 'Rechnungen', icon: 'receipt', perm: 'invoices.read' },
+    { to: '/gutschriften', label: 'Gutschriften', icon: 'undo', perm: 'invoices.read' },
+    { to: '/abos', label: 'Abo-Rechnungen', icon: 'repeat', perm: 'invoices.read' },
   ] },
   { title: 'Lager & Einkauf', items: [
     { to: '/artikel', label: 'Artikel & Lager', icon: 'box', perm: 'inventory.read' },
@@ -52,17 +55,29 @@ const NAV = [
   ] },
 ];
 
-function PasswordModal({ onClose }) {
+/** Konto & Sicherheit: Passwort ändern und Zwei-Faktor-Anmeldung einrichten. */
+function AccountModal({ onClose, onChanged }) {
   const toast = useToast();
+  const { user } = useAuth();
   const [form, setForm] = useState({ current: '', password: '', repeat: '' });
+  const [setup, setSetup] = useState(null);
+  const [code, setCode] = useState('');
+  const [off, setOff] = useState('');
   const submit = async (e) => {
     e.preventDefault();
     if (form.password !== form.repeat) return toast.error('Die neuen Passwörter stimmen nicht überein.');
     try {
       await api('/auth/password', { method: 'POST', body: { current: form.current, password: form.password } });
-      toast('Passwort geändert.');
-      onClose();
-    } catch (err) { toast.error(err.message); }
+      toast('Passwort geändert. Andere Sitzungen wurden beendet.');
+      return onClose();
+    } catch (err) { return toast.error(err.message); }
+  };
+  const call = async (path, body, message) => {
+    try {
+      const result = await api(path, { method: 'POST', body });
+      if (message) { toast(message); await onChanged(); setSetup(null); setCode(''); setOff(''); }
+      return result;
+    } catch (err) { toast.error(err.message); return null; }
   };
   const input = (key, label) => (
     <Field label={label}>
@@ -71,22 +86,52 @@ function PasswordModal({ onClose }) {
     </Field>
   );
   return (
-    <Modal title="Passwort ändern" onClose={onClose}>
-      <form onSubmit={submit} className="stack">
-        {input('current', 'Aktuelles Passwort')}
-        {input('password', 'Neues Passwort (mind. 10 Zeichen)')}
-        {input('repeat', 'Neues Passwort wiederholen')}
-        <div className="row" style={{ justifyContent: 'flex-end' }}>
-          <button type="button" className="btn" onClick={onClose}>Abbrechen</button>
-          <button className="btn primary">Speichern</button>
+    <Modal title="Konto & Sicherheit" onClose={onClose}>
+      <div className="stack">
+        <form onSubmit={submit} className="stack">
+          <h3>Passwort ändern</h3>
+          {input('current', 'Aktuelles Passwort')}
+          {input('password', 'Neues Passwort (mind. 10 Zeichen)')}
+          {input('repeat', 'Neues Passwort wiederholen')}
+          <div className="row" style={{ justifyContent: 'flex-end' }}><button className="btn primary">Passwort speichern</button></div>
+        </form>
+        <hr style={{ border: 0, borderTop: '1px solid var(--line)', width: '100%' }} />
+        <div className="stack">
+          <div className="row"><h3>Zwei-Faktor-Anmeldung</h3>{user.totp_enabled ? <span className="badge green">Aktiv</span> : <span className="badge">Nicht aktiv</span>}</div>
+          {user.totp_enabled ? (
+            <>
+              <p className="muted" style={{ margin: 0 }}>Bei jeder Anmeldung wird zusätzlich ein Code aus Ihrer Authenticator-App verlangt. Bei Verlust des Geräts kann ein Administrator den zweiten Faktor zurücksetzen.</p>
+              <div className="row">
+                <input className="input" style={{ maxWidth: 240 }} type="password" placeholder="Passwort zur Bestätigung" autoComplete="current-password" value={off} onChange={(e) => setOff(e.target.value)} />
+                <button className="btn danger" disabled={!off} onClick={() => call('/auth/2fa/disable', { password: off }, 'Zwei-Faktor-Anmeldung ausgeschaltet.')}>Ausschalten</button>
+              </div>
+            </>
+          ) : !setup ? (
+            <>
+              <p className="muted" style={{ margin: 0 }}>Schützt Ihr Konto zusätzlich mit einem zeitbasierten Code (Google Authenticator, Microsoft Authenticator, 1Password u.a.).</p>
+              <div><button className="btn" onClick={async () => setSetup(await call('/auth/2fa/setup', {}))}><Icon name="shield" /> Einrichten</button></div>
+            </>
+          ) : (
+            <>
+              <p className="muted" style={{ margin: 0 }}>1. QR-Code mit der Authenticator-App scannen (oder den Schlüssel von Hand eingeben). 2. Den angezeigten Code hier bestätigen.</p>
+              <div className="row" style={{ alignItems: 'flex-start' }}>
+                <img src={setup.qr} alt="QR-Code für die Authenticator-App" width="170" height="170" style={{ border: '1px solid var(--line)', borderRadius: 8 }} />
+                <div className="stack" style={{ flex: 1, minWidth: 200 }}>
+                  <Field label="Schlüssel"><input className="input" readOnly value={setup.secret.replace(/(.{4})/g, '$1 ').trim()} onFocus={(e) => e.target.select()} /></Field>
+                  <Field label="Code aus der App"><input className="input" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value)} /></Field>
+                  <div><button className="btn primary" disabled={code.replace(/\s/g, '').length !== 6} onClick={() => call('/auth/2fa/enable', { code }, 'Zwei-Faktor-Anmeldung aktiviert.')}>Aktivieren</button></div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
-      </form>
+      </div>
     </Modal>
   );
 }
 
 function Shell({ children }) {
-  const { user, can, settings, logout } = useAuth();
+  const { user, can, settings, logout, reloadUser } = useAuth();
   const [open, setOpen] = useState(false);
   const [pw, setPw] = useState(false);
   const location = useLocation();
@@ -124,12 +169,12 @@ function Shell({ children }) {
               <div className="muted small">{user.role}</div>
             </div>
           </div>
-          <button className="icon-btn" title="Passwort ändern" onClick={() => setPw(true)}><Icon name="key" /></button>
+          <button className="icon-btn" title="Konto & Sicherheit" onClick={() => setPw(true)}><Icon name="key" /></button>
           <button className="icon-btn" title="Abmelden" onClick={logout}><Icon name="logout" /></button>
         </header>
         <main className="content">{children}</main>
       </div>
-      {pw && <PasswordModal onClose={() => setPw(false)} />}
+      {pw && <AccountModal onClose={() => setPw(false)} onChanged={reloadUser} />}
     </div>
   );
 }
@@ -158,12 +203,14 @@ export default function App() {
   }, []);
   useEffect(() => { if (user) reloadSettings(); }, [user, reloadSettings]);
 
+  const reloadUser = useCallback(() => api('/auth/me').then(setUser).catch(() => setUser(null)), []);
   const can = useCallback((perm) => !!user && (user.permissions.includes('*') || user.permissions.includes(perm)), [user]);
   const logout = useCallback(async () => {
     await api('/auth/logout', { method: 'POST' }).catch(() => {});
     setUser(null);
   }, []);
 
+  if (window.location.pathname === '/passwort-zuruecksetzen') return <ResetPassword />;
   if (user === undefined) return <div className="empty">Lädt…</div>;
   if (!user) return <Login onLogin={setUser} />;
 
@@ -175,7 +222,7 @@ export default function App() {
   );
 
   return (
-    <AuthCtx.Provider value={{ user, can, settings, reloadSettings, logout }}>
+    <AuthCtx.Provider value={{ user, can, settings, reloadSettings, logout, reloadUser }}>
       <Shell>
         <Routes>
           <Route path="/" element={<Dashboard />} />
@@ -186,6 +233,8 @@ export default function App() {
           <Route path="/offerten">{doc('quote', 'quotes')}</Route>
           <Route path="/auftraege">{doc('order', 'orders')}</Route>
           <Route path="/rechnungen">{doc('invoice', 'invoices')}</Route>
+          <Route path="/gutschriften">{doc('credit', 'invoices')}</Route>
+          <Route path="/abos" element={<Guard perm="invoices.read"><Recurring /></Guard>} />
           <Route path="/bestellungen">{doc('purchase', 'purchasing')}</Route>
           <Route path="/kostenstellen" element={<Guard perm="accounting.read"><CostCenters /></Guard>} />
           <Route path="/admin/waehrungen" element={<Guard perm="admin.settings"><Currencies /></Guard>} />
