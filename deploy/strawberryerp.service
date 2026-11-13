@@ -1,0 +1,26 @@
+[Unit]
+Description=StrawberryERP
+After=network-online.target mysqld.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=strawberry
+Group=strawberry
+WorkingDirectory=/opt/strawberryerp/server
+EnvironmentFile=/etc/strawberryerp.env
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=5
+
+# Härtung
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

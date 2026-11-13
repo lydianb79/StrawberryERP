@@ -1,0 +1,42 @@
+# StrawberryERP – App + MySQL. Konfiguration über .env (siehe .env.example).
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: strawberryerp
+      MYSQL_USER: strawberry
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD in .env setzen}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD in .env setzen}
+      TZ: Europe/Zurich
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    volumes:
+      - dbdata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -ustrawberry -p$$MYSQL_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_USER: strawberry
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: strawberryerp
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET in .env setzen}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      SEED_DEMO: ${SEED_DEMO:-false}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      TZ: Europe/Zurich
+    ports:
+      - "${APP_PORT:-8080}:3000"
+
+volumes:
+  dbdata:
