@@ -37,10 +37,11 @@ function YearSelect({ years, value, onChange }) {
 const PrintBtn = () => <button className="btn" onClick={() => window.print()}><Icon name="download" /> Drucken / PDF</button>;
 
 // ---------- Journal ----------
-function EntryModal({ accounts, onClose, onSaved }) {
+function EntryModal({ accounts, costCenters, onClose, onSaved }) {
   const toast = useToast();
   const [form, setForm] = useState({ date: today(), text: '' });
-  const [lines, setLines] = useState([{ account_id: '', debit: '', credit: '' }, { account_id: '', debit: '', credit: '' }]);
+  const blank = { account_id: '', debit: '', credit: '', cost_center_id: '' };
+  const [lines, setLines] = useState([{ ...blank }, { ...blank }]);
   const setLine = (i, patch) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const sumD = round2(lines.reduce((s, l) => s + (Number(l.debit) || 0), 0));
   const sumC = round2(lines.reduce((s, l) => s + (Number(l.credit) || 0), 0));
@@ -63,7 +64,7 @@ function EntryModal({ accounts, onClose, onSaved }) {
           <Field label="Buchungstext *" className="span-2"><input className="input" required autoFocus value={form.text} onChange={(e) => setForm({ ...form, text: e.target.value })} /></Field>
         </div>
         <table className="table items-table" style={{ marginTop: 14 }}>
-          <thead><tr><th>Konto</th><th className="num" style={{ width: 140 }}>Soll</th><th className="num" style={{ width: 140 }}>Haben</th><th style={{ width: 36 }} /></tr></thead>
+          <thead><tr><th>Konto</th>{costCenters.length > 0 && <th style={{ width: 170 }}>Kostenstelle</th>}<th className="num" style={{ width: 130 }}>Soll</th><th className="num" style={{ width: 130 }}>Haben</th><th style={{ width: 36 }} /></tr></thead>
           <tbody>
             {lines.map((l, i) => (
               <tr key={i}>
@@ -73,6 +74,14 @@ function EntryModal({ accounts, onClose, onSaved }) {
                     {accounts.map((a) => <option key={a.id} value={a.id}>{a.number} {a.name}</option>)}
                   </select>
                 </td>
+                {costCenters.length > 0 && (
+                  <td>
+                    <select className="input" value={l.cost_center_id} onChange={(e) => setLine(i, { cost_center_id: e.target.value })}>
+                      <option value="">–</option>
+                      {costCenters.map((c) => <option key={c.id} value={c.id}>{c.code} {c.name}</option>)}
+                    </select>
+                  </td>
+                )}
                 <td><input className="input num" type="number" step="0.01" min="0" value={l.debit} onChange={(e) => setLine(i, { debit: e.target.value, credit: e.target.value ? '' : l.credit })} /></td>
                 <td><input className="input num" type="number" step="0.01" min="0" value={l.credit} onChange={(e) => setLine(i, { credit: e.target.value, debit: e.target.value ? '' : l.debit })} /></td>
                 <td>{lines.length > 2 && <button type="button" className="icon-btn danger" onClick={() => setLines(lines.filter((_, j) => j !== i))}><Icon name="x" /></button>}</td>
@@ -80,12 +89,12 @@ function EntryModal({ accounts, onClose, onSaved }) {
             ))}
           </tbody>
           <tfoot>
-            <tr><td>Summe {!balanced && sumD + sumC > 0 && <span className="neg small">– Differenz {money(Math.abs(sumD - sumC))}</span>}</td>
+            <tr><td colSpan={costCenters.length > 0 ? 2 : 1}>Summe {!balanced && sumD + sumC > 0 && <span className="neg small">– Differenz {money(Math.abs(sumD - sumC))}</span>}</td>
               <td className="num">{money(sumD)}</td><td className="num">{money(sumC)}</td><td /></tr>
           </tfoot>
         </table>
         <div className="row" style={{ marginTop: 16 }}>
-          <button type="button" className="btn" onClick={() => setLines([...lines, { account_id: '', debit: '', credit: '' }])}><Icon name="plus" /> Zeile</button>
+          <button type="button" className="btn" onClick={() => setLines([...lines, { ...blank }])}><Icon name="plus" /> Zeile</button>
           <div className="spacer" />
           <button type="button" className="btn" onClick={onClose}>Abbrechen</button>
           <button className="btn primary" disabled={!balanced}>Buchen</button>
@@ -101,6 +110,7 @@ export function Journal() {
   const { years, yearId, setYearId, year } = useYears();
   const [entries, setEntries] = useState(null);
   const [accounts, setAccounts] = useState([]);
+  const [costCenters, setCostCenters] = useState([]);
   const [accountId, setAccountId] = useState('');
   const [adding, setAdding] = useState(false);
 
@@ -111,7 +121,7 @@ export function Journal() {
       .catch((e) => { setEntries([]); toast.error(e.message); });
   }, [yearId, accountId, toast]);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { api('/reports/lookup').then((l) => setAccounts(l.accounts)).catch(() => {}); }, []);
+  useEffect(() => { api('/reports/lookup').then((l) => { setAccounts(l.accounts); setCostCenters(l.costCenters); }).catch(() => {}); }, []);
 
   const remove = async (entry) => {
     if (!window.confirm('Diese manuelle Buchung löschen?')) return;
@@ -146,7 +156,8 @@ export function Journal() {
                 ...e.lines.map((l) => (
                   <tr key={`l${l.id}`}>
                     <td /><td />
-                    <td style={{ paddingLeft: l.credit ? 40 : 14 }}>{l.account_number} {l.account_name}</td><td />
+                    <td style={{ paddingLeft: l.credit ? 40 : 14 }}>{l.account_number} {l.account_name}</td>
+                    <td>{l.cost_center_code && <span className="badge">KST {l.cost_center_code}</span>}</td>
                     <td className="num">{l.debit ? money(l.debit) : ''}</td><td className="num">{l.credit ? money(l.credit) : ''}</td><td />
                   </tr>
                 )),
@@ -157,7 +168,7 @@ export function Journal() {
           {!entries && <div className="empty">Lädt…</div>}
         </div>
       </div>
-      {adding && <EntryModal accounts={accounts} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); load(); }} />}
+      {adding && <EntryModal accounts={accounts} costCenters={costCenters} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); load(); }} />}
     </>
   );
 }

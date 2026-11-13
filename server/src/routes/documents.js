@@ -5,6 +5,8 @@ import { HttpError, h } from '../util.js';
 import * as docs from '../services/documents.js';
 import { getSettings, getLogo } from '../services/settings.js';
 import { renderDocumentPdf } from '../services/pdf.js';
+import { createSupplierInvoice } from '../services/payables.js';
+import { mailDraft, sendDocument } from '../services/mail.js';
 
 const r = Router();
 const { TYPES } = docs;
@@ -17,18 +19,20 @@ const typeOf = async (id) => {
 const needFor = async (req, id, mode) => need(req, `${TYPES[await typeOf(id)].perm}.${mode}`);
 
 r.get('/', h(async (req, res) => {
-  const { type, status, q: search, customer_id } = req.query;
+  const { type, status, q: search, customer_id, supplier_id } = req.query;
   if (!TYPES[type]) throw new HttpError(400, 'Parameter type fehlt');
   need(req, `${TYPES[type].perm}.read`);
   const where = ['d.type = ?'], params = [type];
   if (status) { where.push('d.status = ?'); params.push(status); }
   if (customer_id) { where.push('d.customer_id = ?'); params.push(customer_id); }
-  if (search) { where.push('(d.number LIKE ? OR c.company LIKE ? OR d.reference LIKE ?)'); params.push(`%${search}%`, `%${search}%`, `%${search}%`); }
+  if (supplier_id) { where.push('d.supplier_id = ?'); params.push(supplier_id); }
+  if (search) { where.push('(d.number LIKE ? OR c.company LIKE ? OR s.company LIKE ? OR d.reference LIKE ?)'); params.push(...Array(4).fill(`%${search}%`)); }
   res.json(await q(
     `SELECT d.id, d.type, d.number, d.date, d.due_date, d.valid_until, d.status, d.reference, d.subtotal, d.total, d.paid_amount,
-            d.customer_id, c.company AS customer_name,
+            d.customer_id, d.supplier_id, COALESCE(c.company, s.company) AS partner_name, d.currency, d.exchange_rate, d.sent_at,
+            ROUND(d.subtotal * d.exchange_rate, 2) AS base_subtotal, ROUND(d.total * d.exchange_rate, 2) AS base_total,
             (d.type = 'invoice' AND d.status IN ('open','partial') AND d.due_date < CURDATE()) AS overdue
-       FROM documents d JOIN customers c ON c.id = d.customer_id
+       FROM documents d LEFT JOIN customers c ON c.id = d.customer_id LEFT JOIN suppliers s ON s.id = d.supplier_id
       WHERE ${where.join(' AND ')} ORDER BY d.date DESC, d.id DESC LIMIT 1000`, params));
 }));
 
@@ -115,12 +119,50 @@ r.delete('/payments/:paymentId', h(async (req, res) => {
 r.get('/:id/pdf', h(async (req, res) => {
   await needFor(req, req.params.id, 'read');
   const doc = await docs.getDocument(undefined, req.params.id);
-  const customer = await one('SELECT * FROM customers WHERE id = ?', [doc.customer_id]);
+  const customer = await docs.getPartner(undefined, doc);
   const settings = await getSettings();
   const filename = `${TYPES[doc.type].label}-${doc.number || 'Entwurf'}.pdf`.replace(/[^\w.\-]/g, '_');
   res.set('Content-Type', 'application/pdf');
   res.set('Content-Disposition', `${req.query.download ? 'attachment' : 'inline'}; filename="${filename}"`);
   renderDocumentPdf({ doc, items: doc.items, customer, settings, logo: await getLogo() }, res);
+}));
+
+// ---------- Bestellwesen ----------
+r.post('/:id/receive', h(async (req, res) => {
+  need(req, 'purchasing.write');
+  const doc = await tx((conn) => docs.receivePurchase(conn, req.user, req.params.id, req.body?.items));
+  await audit(req, 'receive', 'purchase', doc.id, doc.number);
+  res.json(await docs.getDocument(undefined, req.params.id));
+}));
+
+/** Lieferantenrechnung aus der Bestellung erzeugen (Beträge und Währung werden übernommen). */
+r.post('/:id/bill', h(async (req, res) => {
+  need(req, 'payables.write');
+  const po = await docs.getDocument(undefined, req.params.id);
+  if (po.type !== 'purchase' || ['draft', 'cancelled'].includes(po.status)) throw new HttpError(400, 'Nur für ausgelöste Bestellungen kann eine Lieferantenrechnung erfasst werden.');
+  const id = await tx((conn) => createSupplierInvoice(conn, req.user, {
+    supplier_id: po.supplier_id, number: req.body?.number, date: req.body?.date, due_date: req.body?.due_date,
+    expense_account_id: req.body?.expense_account_id, description: req.body?.description || `Bestellung ${po.number}`,
+    net: req.body?.net ?? po.subtotal, vat: req.body?.vat ?? po.vat_total,
+    currency: po.currency, exchange_rate: req.body?.exchange_rate || po.exchange_rate,
+    cost_center_id: req.body?.cost_center_id || po.cost_center_id, purchase_order_id: po.id,
+  }));
+  await audit(req, 'create', 'supplier_invoice', id, `aus Bestellung ${po.number}`);
+  res.status(201).json(await docs.getDocument(undefined, req.params.id));
+}));
+
+// ---------- E-Mail-Versand ----------
+r.get('/:id/mail', h(async (req, res) => {
+  await needFor(req, req.params.id, 'read');
+  res.json(await mailDraft(undefined, req.params.id));
+}));
+
+r.post('/:id/send', h(async (req, res) => {
+  await needFor(req, req.params.id, 'write');
+  const { doc, recipients } = await sendDocument(undefined, req.params.id, req.body || {});
+  await tx((conn) => docs.markSent(conn, req.params.id));
+  await audit(req, 'send-mail', doc.type, doc.id, `${doc.number} an ${recipients.join(', ')}`);
+  res.json(await docs.getDocument(undefined, req.params.id));
 }));
 
 export default r;

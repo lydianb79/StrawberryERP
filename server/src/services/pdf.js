@@ -1,5 +1,6 @@
 import PDFDocument from 'pdfkit';
 import { computeTotals, TYPES } from './documents.js';
+import { buildQrBill } from './qrbill.js';
 
 const FONTS = {
   Helvetica: ['Helvetica', 'Helvetica-Bold'],
@@ -28,6 +29,7 @@ export function renderDocumentPdf({ doc, items, customer, settings, logo }, stre
   const INK = '#1a1d23', MUTED = '#6b7280', LINE = '#d5d9e0';
   const L = 50, R = 545, W = R - L;
   const label = TYPES[doc.type].label;
+  const cur = doc.currency || c.currency || 'CHF';
   const title = `${label} ${doc.number || '(Entwurf)'}`;
 
   const pdf = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true, info: { Title: title, Author: c.name } });
@@ -71,8 +73,9 @@ export function renderDocumentPdf({ doc, items, customer, settings, logo }, stre
 
   const meta = [
     ['Datum', date(doc.date)],
-    [`${doc.type === 'invoice' ? 'Rechnungs' : doc.type === 'order' ? 'Auftrags' : 'Offert'}-Nr.`, doc.number || 'Entwurf'],
-    ['Kunden-Nr.', customer.number],
+    [`${{ invoice: 'Rechnungs', order: 'Auftrags', quote: 'Offert', purchase: 'Bestell' }[doc.type]}-Nr.`, doc.number || 'Entwurf'],
+    [doc.type === 'purchase' ? 'Lieferanten-Nr.' : 'Kunden-Nr.', customer.number],
+    doc.type === 'purchase' && doc.due_date ? ['Liefertermin', date(doc.due_date)] : null,
     doc.type === 'invoice' && doc.due_date ? ['Zahlbar bis', date(doc.due_date)] : null,
     doc.type === 'quote' && doc.valid_until ? ['Gültig bis', date(doc.valid_until)] : null,
     doc.reference ? ['Referenz', doc.reference] : null,
@@ -116,7 +119,7 @@ export function renderDocumentPdf({ doc, items, customer, settings, logo }, stre
     layout.showUnit && { key: 'unit', label: 'Einh.', w: 36, align: 'left' },
     { key: 'price', label: 'Preis', w: 62, align: 'right' },
     showDiscount && { key: 'disc', label: 'Rabatt', w: 42, align: 'right' },
-    { key: 'amount', label: `Betrag ${c.currency || 'CHF'}`, w: 74, align: 'right' },
+    { key: 'amount', label: `Betrag ${cur}`, w: 74, align: 'right' },
   ].filter(Boolean);
   const descCol = cols.find((col) => col.key === 'desc');
   descCol.w = W - cols.reduce((s, col) => s + col.w, 0);
@@ -176,13 +179,13 @@ export function renderDocumentPdf({ doc, items, customer, settings, logo }, stre
   if (tpl === 'modern') {
     pdf.rect(tx - 8, y - 4, tw + 8, 24).fill(accent);
     pdf.font(FB).fontSize(11).fillColor('#ffffff');
-    pdf.text(`Total ${c.currency || 'CHF'}`, tx, y + 3, { width: tw - 90, lineBreak: false });
+    pdf.text(`Total ${cur}`, tx, y + 3, { width: tw - 90, lineBreak: false });
     pdf.text(money(t.total), R - 90, y + 3, { width: 90 - PADX, align: 'right', lineBreak: false });
     y += 30;
   } else {
     pdf.moveTo(tx, y - 3).lineTo(R, y - 3).lineWidth(0.9).strokeColor(tpl === 'classic' ? accent : INK).stroke();
     y += 3;
-    sumRow(`Total ${c.currency || 'CHF'}`, money(t.total), true);
+    sumRow(`Total ${cur}`, money(t.total), true);
     pdf.moveTo(tx, y - 2).lineTo(R, y - 2).lineWidth(0.9).strokeColor(tpl === 'classic' ? accent : INK).stroke();
     y += 8;
   }
@@ -196,7 +199,10 @@ export function renderDocumentPdf({ doc, items, customer, settings, logo }, stre
     pdf.fillColor(INK).text(closing, L, y, { width: W, lineGap: 2 });
     y = pdf.y + 8;
   }
-  if (doc.type === 'invoice' && layout.showBankDetails && c.iban) {
+  // QR-Zahlteil (Swiss QR Bill) für gebuchte Rechnungen
+  const qr = doc.type === 'invoice' && layout.showQrBill && doc.number && doc.status !== 'cancelled'
+    ? buildQrBill({ doc, partner: customer, company: c }).bill : null;
+  if (doc.type === 'invoice' && layout.showBankDetails && c.iban && !qr) {
     ensure(50);
     y += 8;
     pdf.font(FB).fontSize(9).fillColor(INK).text('Bankverbindung', L, y);
@@ -204,11 +210,19 @@ export function renderDocumentPdf({ doc, items, customer, settings, logo }, stre
     pdf.font(F).fontSize(9).fillColor(INK).text(bank, L, pdf.y + 2, { width: W });
   }
 
-  // ---------- Fusszeile auf jeder Seite ----------
+  if (qr) {
+    // Der Zahlteil belegt die untersten 105 mm; reicht der Platz nicht, legt die Bibliothek eine eigene Seite an.
+    pdf.x = L;
+    pdf.y = y + 14;
+    qr.attachTo(pdf);
+  }
+
+  // ---------- Fusszeile auf jeder Seite (nicht auf der Seite mit dem Zahlteil) ----------
   const range = pdf.bufferedPageRange();
   const footer = layout.footerText
     || [c.name, c.street, `${c.zip || ''} ${c.city || ''}`.trim(), c.phone, c.email, c.vat_no].filter(Boolean).join('  ·  ');
   for (let i = 0; i < range.count; i++) {
+    if (qr && i === range.count - 1) continue;
     pdf.switchToPage(range.start + i);
     pdf.page.margins.bottom = 0;
     pdf.moveTo(L, 790).lineTo(R, 790).lineWidth(0.5).strokeColor(tpl === 'minimal' ? LINE : accent).stroke();
@@ -230,7 +244,7 @@ export function sampleDocument(settings) {
   const t = computeTotals(items);
   const year = new Date().getFullYear();
   return {
-    doc: { type: 'invoice', number: `${settings.numbering.invoicePrefix}-${year}-0042`, date: `${year}-03-15`, due_date: `${year}-04-14`,
+    doc: { id: 42, status: 'open', currency: settings.company.currency || 'CHF', type: 'invoice', number: `${settings.numbering.invoicePrefix}-${year}-0042`, date: `${year}-03-15`, due_date: `${year}-04-14`,
       reference: 'Projekt Büroausbau', ...t },
     items,
     customer: { number: 'K-10042', company: 'Muster Handels AG', contact_name: 'Frau Anna Beispiel', street: 'Bahnhofstrasse 12', zip: '3000', city: 'Bern', country: 'Schweiz' },

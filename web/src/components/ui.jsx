@@ -35,6 +35,10 @@ const PATHS = {
   check: 'M5 12l5 5 9-10',
   back: 'M15 5l-7 7 7 7',
   lock: 'M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4',
+  mail: 'M3 6h18v12H3zM3 7l9 6 9-6',
+  coins: 'M9 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12M15.500 10.200A6 6 0 1 1 10.200 21',
+  target: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8',
+  refresh: 'M20 11a8 8 0 0 0-14.900-3M4 4v4h4M4 13a8 8 0 0 0 14.900 3M20 20v-4h-4',
 };
 
 export function Icon({ name }) {

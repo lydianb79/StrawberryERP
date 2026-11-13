@@ -8,7 +8,7 @@ import { PaymentModal } from './DocumentEditor.jsx';
 const BUCKETS = [['current', 'Nicht fällig'], ['d30', '1–30 Tage überfällig'], ['d60', '31–60 Tage'], ['d90', 'Über 60 Tage']];
 
 export function Aging({ rows }) {
-  const sum = (b) => rows.filter((r) => r.bucket === b).reduce((s, r) => s + r.open_amount, 0);
+  const sum = (b) => rows.filter((r) => r.bucket === b).reduce((s, r) => s + (r.base_open ?? r.open_amount), 0);
   return (
     <div className="aging">
       {BUCKETS.map(([key, label]) => (
@@ -24,17 +24,17 @@ const openColumns = (linkTo) => [
   { key: 'date', label: 'Datum', render: (r) => fmtDate(r.date), csv: (r) => fmtDate(r.date) },
   { key: 'due_date', label: 'Fällig', render: (r) => fmtDate(r.due_date), csv: (r) => fmtDate(r.due_date) },
   { key: 'days_overdue', label: 'Tage überfällig', num: true, render: (r) => (r.days_overdue > 0 ? <span className="neg">{r.days_overdue}</span> : '–') },
+  { key: 'currency', label: 'Whg.' },
   { key: 'total', label: 'Betrag', num: true, render: (r) => money(r.total) },
   { key: 'paid_amount', label: 'Bezahlt', num: true, render: (r) => money(r.paid_amount) },
   { key: 'open_amount', label: 'Offen', num: true, render: (r) => <b>{money(r.open_amount)}</b> },
+  { key: 'base_open', label: 'Offen (Basis)', num: true, render: (r) => money(r.base_open) },
 ];
 
 const openFooter = (list) => (
   <tr>
-    <td colSpan={5}>Total offene Posten</td>
-    <td className="num">{money(list.reduce((s, r) => s + r.total, 0))}</td>
-    <td className="num">{money(list.reduce((s, r) => s + r.paid_amount, 0))}</td>
-    <td className="num">{money(list.reduce((s, r) => s + r.open_amount, 0))}</td>
+    <td colSpan={9}>Total offene Posten in Basiswährung</td>
+    <td className="num">{money(list.reduce((s, r) => s + r.base_open, 0))}</td>
     <td />
   </tr>
 );
@@ -62,6 +62,7 @@ export function Receivables() {
       <DataTable columns={columns} rows={rows} exportName="debitoren-offene-posten" empty="Keine offenen Debitoren – alle Rechnungen sind bezahlt." footer={openFooter} />
       {paying && (
         <PaymentModal title={`Zahlungseingang zu ${paying.number} – ${paying.partner}`} open={paying.open_amount} accounts={accounts}
+          currency={paying.currency} baseCurrency={settings?.company?.currency || 'CHF'} rate={paying.exchange_rate}
           defaultAccount={settings?.accounting?.bank} onClose={() => setPaying(null)}
           onSubmit={async (form) => {
             try {
@@ -77,10 +78,10 @@ export function Receivables() {
 }
 
 // ---------- Kreditoren ----------
-function BillModal({ bill, lookup, rates, writable, onClose, onSaved }) {
+function BillModal({ bill, lookup, rates, base, writable, onClose, onSaved }) {
   const toast = useToast();
   const [form, setForm] = useState(bill.id ? { ...bill } : {
-    supplier_id: '', number: '', date: today(), due_date: '', description: '', net: '', vat: '',
+    supplier_id: '', number: '', date: today(), due_date: '', description: '', net: '', vat: '', currency: base, exchange_rate: 1, cost_center_id: '',
     expense_account_id: lookup.accounts.find((a) => a.number === '4200')?.id || '',
   });
   const [rate, setRate] = useState(bill.id && bill.net ? '' : rates[0]);
@@ -88,6 +89,14 @@ function BillModal({ bill, lookup, rates, writable, onClose, onSaved }) {
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const setNet = (net, r = rate) => set({ net, ...(r !== '' ? { vat: round2(Number(net) * Number(r) / 100) } : {}) });
   const accounts = lookup.accounts.filter((a) => a.type === 'expense' || a.type === 'asset');
+  const rateOf = (code) => (code === base ? 1 : lookup.currencies.find((c) => c.code === code)?.rate ?? 1);
+  const codes = [...new Set([base, ...lookup.currencies.map((c) => c.code), form.currency])];
+  const foreign = form.currency !== base;
+  const pickSupplier = (value) => {
+    const sup = lookup.suppliers.find((x) => String(x.id) === String(value));
+    const currency = sup?.currency || form.currency;
+    set({ supplier_id: value, currency, exchange_rate: rateOf(currency) });
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -114,7 +123,7 @@ function BillModal({ bill, lookup, rates, writable, onClose, onSaved }) {
         {locked && writable && <div className="alert" style={{ marginBottom: 14 }}>Diese Rechnung hat Zahlungen und kann nicht mehr geändert werden.</div>}
         <div className="form-grid cols-3">
           <Field label="Lieferant *" className="span-2">
-            <select className="input" required disabled={locked} value={form.supplier_id} onChange={(e) => set({ supplier_id: e.target.value })}>
+            <select className="input" required disabled={locked} value={form.supplier_id} onChange={(e) => pickSupplier(e.target.value)}>
               <option value="">Bitte wählen…</option>
               {lookup.suppliers.map((s) => <option key={s.id} value={s.id}>{s.company} ({s.number})</option>)}
             </select>
@@ -128,6 +137,20 @@ function BillModal({ bill, lookup, rates, writable, onClose, onSaved }) {
             </select>
           </Field>
           <Field label="Beschreibung" className="span-all"><input className="input" disabled={locked} value={form.description || ''} onChange={(e) => set({ description: e.target.value })} /></Field>
+          <Field label="Währung">
+            <select className="input" disabled={locked} value={form.currency} onChange={(e) => set({ currency: e.target.value, exchange_rate: rateOf(e.target.value) })}>
+              {codes.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </Field>
+          <Field label={foreign ? `Kurs (1 ${form.currency} = … ${base})` : 'Kurs'}>
+            <input className="input num" type="number" step="any" min="0.000001" disabled={locked || !foreign} value={form.exchange_rate} onChange={(e) => set({ exchange_rate: e.target.value })} />
+          </Field>
+          <Field label="Kostenstelle">
+            <select className="input" disabled={locked} value={form.cost_center_id || ''} onChange={(e) => set({ cost_center_id: e.target.value })}>
+              <option value="">–</option>
+              {lookup.costCenters.map((c) => <option key={c.id} value={c.id}>{c.code} {c.name}</option>)}
+            </select>
+          </Field>
           <Field label="Betrag netto *"><input className="input num" type="number" step="0.01" min="0.01" required disabled={locked} value={form.net} onChange={(e) => setNet(e.target.value)} /></Field>
           <Field label="MwSt-Satz">
             <select className="input" disabled={locked} value={rate} onChange={(e) => { setRate(e.target.value); if (e.target.value !== '') setNet(form.net, e.target.value); }}>
@@ -137,7 +160,11 @@ function BillModal({ bill, lookup, rates, writable, onClose, onSaved }) {
           </Field>
           <Field label="Vorsteuer (MwSt)"><input className="input num" type="number" step="0.01" min="0" disabled={locked || rate !== ''} value={form.vat} onChange={(e) => set({ vat: e.target.value })} /></Field>
         </div>
-        <p style={{ textAlign: 'right', margin: '14px 0 0' }}>Total brutto: <b>{money(Number(form.net || 0) + Number(form.vat || 0))}</b></p>
+        <p style={{ textAlign: 'right', margin: '14px 0 0' }}>
+          {bill.purchase_order_number && <span className="muted" style={{ float: 'left' }}>Zu Bestellung {bill.purchase_order_number}</span>}
+          Total brutto: <b>{form.currency} {money(Number(form.net || 0) + Number(form.vat || 0))}</b>
+          {foreign && <span className="muted"> (≙ {base} {money((Number(form.net || 0) + Number(form.vat || 0)) * (Number(form.exchange_rate) || 0))})</span>}
+        </p>
 
         {bill.id && bill.payments?.length > 0 && (
           <table className="table" style={{ marginTop: 14 }}>
@@ -192,6 +219,7 @@ export function Payables() {
     { key: 'date', label: 'Datum', render: (r) => fmtDate(r.date), csv: (r) => fmtDate(r.date) },
     { key: 'due_date', label: 'Fällig', render: (r) => fmtDate(r.due_date), csv: (r) => fmtDate(r.due_date) },
     { key: 'account_number', label: 'Konto' },
+    { key: 'currency', label: 'Whg.' },
     { key: 'total', label: 'Brutto', num: true, render: (r) => money(r.total) },
     { key: 'open', label: 'Offen', num: true, render: (r) => money(r.total - r.paid_amount), csv: (r) => r.total - r.paid_amount },
     { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} overdue={!!r.overdue} /> },
@@ -209,16 +237,17 @@ export function Payables() {
         <DataTable columns={columns} rows={rows} exportName="kreditoren" onRowClick={open}
           empty={tab === 'open' ? 'Keine offenen Kreditoren.' : 'Noch keine Lieferantenrechnungen erfasst.'}
           footer={(list) => (
-            <tr><td colSpan={6}>Summe</td><td className="num">{money(list.reduce((s, r) => s + r.total, 0))}</td>
-              <td className="num">{money(list.reduce((s, r) => s + r.total - r.paid_amount, 0))}</td><td colSpan={2} /></tr>
+            <tr><td colSpan={7}>Summe in Basiswährung</td><td className="num">{money(list.reduce((s, r) => s + r.base_total, 0))}</td>
+              <td className="num">{money(list.reduce((s, r) => s + r.base_open, 0))}</td><td colSpan={2} /></tr>
           )} />
       </div>
       {editing && lookup && (
-        <BillModal bill={editing} lookup={lookup} rates={settings?.company?.vat_rates || [8.1, 2.6, 3.8, 0]} writable={writable}
+        <BillModal bill={editing} lookup={lookup} rates={settings?.company?.vat_rates || [8.1, 2.6, 3.8, 0]} base={settings?.company?.currency || 'CHF'} writable={writable}
           onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
       )}
       {paying && lookup && (
         <PaymentModal title={`Zahlung an ${paying.supplier_name} (${paying.number})`} open={round2(paying.total - paying.paid_amount)} accounts={lookup.accounts}
+          currency={paying.currency} baseCurrency={settings?.company?.currency || 'CHF'} rate={paying.exchange_rate}
           defaultAccount={settings?.accounting?.bank} onClose={() => setPaying(null)}
           onSubmit={async (form) => {
             try {

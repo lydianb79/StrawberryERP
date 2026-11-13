@@ -5,14 +5,14 @@ import { AuthCtx, useAuth } from './auth.js';
 import { Icon, Modal, Field, useToast } from './components/ui.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
-import { Customers, Suppliers, Accounts } from './pages/MasterData.jsx';
+import { Customers, Suppliers, Accounts, CostCenters, Currencies } from './pages/MasterData.jsx';
 import { Products, StockMovements } from './pages/Inventory.jsx';
 import DocumentList from './pages/DocumentList.jsx';
 import DocumentEditor from './pages/DocumentEditor.jsx';
 import { Receivables, Payables } from './pages/OpenItems.jsx';
 import { Journal, BalanceSheet, IncomeStatement, FiscalYears } from './pages/Accounting.jsx';
 import Reports from './pages/Reports.jsx';
-import { Users, Roles, CompanySettings, LayoutSettings, AuditLog } from './pages/Admin.jsx';
+import { Users, Roles, CompanySettings, LayoutSettings, AuditLog, MailSettings, SystemInfo } from './pages/Admin.jsx';
 
 
 const NAV = [
@@ -26,6 +26,7 @@ const NAV = [
   { title: 'Lager & Einkauf', items: [
     { to: '/artikel', label: 'Artikel & Lager', icon: 'box', perm: 'inventory.read' },
     { to: '/lagerbewegungen', label: 'Lagerbewegungen', icon: 'swap', perm: 'inventory.read' },
+    { to: '/bestellungen', label: 'Bestellungen', icon: 'cart', perm: 'purchasing.read' },
     { to: '/lieferanten', label: 'Lieferanten', icon: 'truck', perm: 'suppliers.read' },
   ] },
   { title: 'Finanzen', items: [
@@ -33,6 +34,7 @@ const NAV = [
     { to: '/kreditoren', label: 'Kreditoren', icon: 'out', perm: 'payables.read' },
     { to: '/journal', label: 'Journal', icon: 'book', perm: 'accounting.read' },
     { to: '/konten', label: 'Kontenplan', icon: 'list', perm: 'accounting.read' },
+    { to: '/kostenstellen', label: 'Kostenstellen', icon: 'target', perm: 'accounting.read' },
     { to: '/bilanz', label: 'Bilanz', icon: 'scale', perm: 'accounting.read' },
     { to: '/erfolgsrechnung', label: 'Erfolgsrechnung', icon: 'trend', perm: 'accounting.read' },
     { to: '/jahresabschluss', label: 'Jahresabschluss', icon: 'calendar', perm: 'accounting.read' },
@@ -42,8 +44,11 @@ const NAV = [
     { to: '/admin/benutzer', label: 'Benutzer', icon: 'users', perm: 'admin.users' },
     { to: '/admin/rollen', label: 'Rollen & Rechte', icon: 'shield', perm: 'admin.users' },
     { to: '/admin/firma', label: 'Firma & Nummern', icon: 'building', perm: 'admin.settings' },
+    { to: '/admin/waehrungen', label: 'Währungen', icon: 'coins', perm: 'admin.settings' },
     { to: '/admin/layout', label: 'Beleglayout', icon: 'layout', perm: 'admin.settings' },
+    { to: '/admin/email', label: 'E-Mail', icon: 'mail', perm: 'admin.settings' },
     { to: '/admin/protokoll', label: 'Protokoll', icon: 'clock', perm: 'admin.settings' },
+    { to: '/admin/system', label: 'System & Updates', icon: 'refresh', perm: 'admin.settings' },
   ] },
 ];
 
@@ -105,7 +110,7 @@ function Shell({ children }) {
             </nav>
           );
         })}
-        <div className="sidebar-foot">StrawberryERP 1.0</div>
+        <div className="sidebar-foot">StrawberryERP {settings?.version || ''}</div>
       </aside>
       <div className="main">
         <header className="topbar no-print">
@@ -181,6 +186,11 @@ export default function App() {
           <Route path="/offerten">{doc('quote', 'quotes')}</Route>
           <Route path="/auftraege">{doc('order', 'orders')}</Route>
           <Route path="/rechnungen">{doc('invoice', 'invoices')}</Route>
+          <Route path="/bestellungen">{doc('purchase', 'purchasing')}</Route>
+          <Route path="/kostenstellen" element={<Guard perm="accounting.read"><CostCenters /></Guard>} />
+          <Route path="/admin/waehrungen" element={<Guard perm="admin.settings"><Currencies /></Guard>} />
+          <Route path="/admin/email" element={<Guard perm="admin.settings"><MailSettings /></Guard>} />
+          <Route path="/admin/system" element={<Guard perm="admin.settings"><SystemInfo /></Guard>} />
           <Route path="/debitoren" element={<Guard perm="receivables.read"><Receivables /></Guard>} />
           <Route path="/kreditoren" element={<Guard perm="payables.read"><Payables /></Guard>} />
           <Route path="/journal" element={<Guard perm="accounting.read"><Journal /></Guard>} />

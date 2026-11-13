@@ -48,6 +48,7 @@ export default function Dashboard() {
         {f && <Kpi label="Lagerwert" value={`CHF ${money(f.stockValue)}`} sub="zu Einstandspreisen" />}
         <Kpi label="Offene Offerten" value={data.openQuotes?.n ?? 0} sub={`Volumen CHF ${money(data.openQuotes?.amount)}`} />
         <Kpi label="Aufträge in Arbeit" value={data.openOrders?.n ?? 0} sub={`Volumen CHF ${money(data.openOrders?.amount)}`} />
+        {can('purchasing.read') && <Kpi label="Offene Bestellungen" value={data.openPurchases?.n ?? 0} sub={`Volumen CHF ${money(data.openPurchases?.amount)}`} />}
       </div>
 
       <div className="grid-3">
@@ -86,7 +87,7 @@ export default function Dashboard() {
                     <td><Link to={`/rechnungen/${r.id}`}>{r.number || 'Entwurf'}</Link></td>
                     <td>{r.customer_name}</td>
                     <td>{fmtDate(r.date)}</td>
-                    <td className="num">{money(r.total)}</td>
+                    <td className="num">{r.currency !== 'CHF' ? `${r.currency} ` : ''}{money(r.total)}</td>
                     <td><StatusBadge status={r.status} overdue={!!r.overdue} /></td>
                   </tr>
                 ))}

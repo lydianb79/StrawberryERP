@@ -3,6 +3,7 @@ import CrudPage from '../components/CrudPage.jsx';
 import { DataTable, Field, Icon, Modal, PageHead, useToast } from '../components/ui.jsx';
 import { api, fmtDateTime, money, qty } from '../lib.js';
 import { useAuth } from '../auth.js';
+import { useLookup } from './MasterData.jsx';
 
 const MOVE = { in: ['Wareneingang', 'green'], out: ['Warenausgang', 'amber'], adjust: ['Inventurkorrektur', 'blue'] };
 
@@ -51,6 +52,8 @@ function StockModal({ product, onClose, onDone }) {
 export function Products() {
   const { can, settings } = useAuth();
   const [stock, setStock] = useState(null);
+  const lookup = useLookup();
+  const revenueAccounts = (lookup?.accounts || []).filter((a) => a.type === 'revenue');
   const rates = settings?.company?.vat_rates || [8.1, 2.6, 3.8, 0];
   return (
     <>
@@ -80,6 +83,10 @@ export function Products() {
           { name: 'vat_rate', label: 'MwSt-Satz', type: 'select', required: true, options: rates.map((r) => ({ value: r, label: `${r} %` })) },
           { name: 'location', label: 'Lagerort' },
           { name: 'min_stock', label: 'Mindestbestand', type: 'number' },
+          { name: 'revenue_account_id', label: 'Erlöskonto', type: 'select', hint: 'Leer = Standard-Erlöskonto',
+            options: revenueAccounts.map((a) => ({ value: a.id, label: `${a.number} ${a.name}` })) },
+          { name: 'supplier_id', label: 'Hauptlieferant', type: 'select', hint: 'Für Bestellvorschläge',
+            options: (lookup?.suppliers || []).map((x) => ({ value: x.id, label: x.company })) },
           { name: 'is_stock_item', label: 'Lagerartikel (Bestand führen)', type: 'checkbox' },
           { name: 'active', label: 'Aktiv', type: 'checkbox' },
         ]}

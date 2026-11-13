@@ -12,26 +12,31 @@ Ausgelegt auf Schweizer Verhältnisse (CHF, MwSt-Sätze, Kontenrahmen KMU), Ober
 | **Offerten** | Erstellen, PDF, Status (Entwurf → Gesendet → Akzeptiert/Abgelehnt), Umwandlung in Auftrag oder Rechnung |
 | **Auftragsverwaltung** | Auftragsbestätigung als PDF, Auslieferung mit Lagerabgang, Umwandlung in Rechnung, Storno |
 | **Rechnungsstellung** | Entwurf → Buchen (fortlaufende Nummer, Debitorenbuchung, Lagerabgang), Teil-/Vollzahlung, Storno mit Gegenbuchung |
+| **QR-Rechnung** | Zahlteil mit Swiss QR Code direkt auf der Rechnung (CHF/EUR), QR-Referenz bei QR-IBAN, sonst Creditor Reference (RF…) |
+| **E-Mail-Versand** | Offerten, Auftragsbestätigungen, Rechnungen und Bestellungen als PDF per SMTP versenden; Textvorlagen mit Platzhaltern |
+| **Bestellwesen** | Bestellungen an Lieferanten mit PDF, Bestellvorschlag aus Mindestbeständen, Teil- und Vollwareneingang ins Lager, Lieferantenrechnung direkt aus der Bestellung |
+| **Fremdwährungen** | Währungen mit Kursen, Belege und Lieferantenrechnungen in Fremdwährung, Buchhaltung in Basiswährung, Kursgewinne/-verluste bei Zahlung automatisch gebucht |
+| **Kostenstellen** | Zuordnung auf Belegen, Lieferantenrechnungen und manuellen Buchungen; Auswertung Ertrag/Aufwand/Ergebnis je Kostenstelle |
 | **Beleglayout** | Logo-Upload (PNG/JPEG), Position und Grösse, 3 Vorlagen, Akzentfarbe, Schrift, Adressfeld links/rechts, ein-/ausblendbare Spalten, Standardtexte mit Platzhaltern, **Live-Vorschau** |
 | **Debitoren / Kreditoren** | Offene Posten, Fälligkeitsstruktur (0 / 1–30 / 31–60 / >60 Tage), Zahlungsein- und -ausgänge, Lieferantenrechnungen mit Vorsteuer |
-| **Finanzbuchhaltung** | Doppelte Buchhaltung, automatische Buchungen aus Belegen, manuelle Buchungen, Kontenplan, Journal |
+| **Finanzbuchhaltung** | Doppelte Buchhaltung, automatische Buchungen aus Belegen, Erlöskonto pro Artikel, manuelle Buchungen, Kontenplan, Journal |
 | **Bilanz und Erfolgsrechnung** | Pro Geschäftsjahr, druckbar |
 | **Jahresabschluss** | Assistent mit Prüfungen; Abschluss der Erfolgskonten, Sperren des Jahres, Anlegen des Folgejahres, **Saldovortrag als Eröffnungsbilanz**, Gewinnvortrag; rückgängig machbar, solange das Folgejahr offen ist |
 | **Reporting** | Dashboard mit Kennzahlen, Umsatz pro Monat, Top-Kunden/-Artikel, Fälligkeitslisten, Lagerbewertung, MwSt-Übersicht; CSV-Export aller Listen |
-| **Administration** | Firmendaten, Nummernkreise, Standardkonten, Protokoll (Audit-Log) |
-| **Benutzer & Rollen** | Benutzerverwaltung, rollenbasierter Zugriff mit 22 Einzelrechten; vordefinierte Rollen: Administrator, Buchhaltung, Verkauf, Lager, Nur Lesen |
+| **Administration** | Firmendaten, Nummernkreise, Standardkonten, Währungen, E-Mail-Server, Protokoll (Audit-Log), System & Updates |
+| **Benutzer & Rollen** | Benutzerverwaltung, rollenbasierter Zugriff mit 24 Einzelrechten; vordefinierte Rollen: Administrator, Buchhaltung, Verkauf, Lager, Nur Lesen |
 
 ## Technologie
 
 - **Frontend:** React 18, React Router, Vite (Single-Page-App, keine externen CDNs/Fonts)
-- **Backend:** Node.js 22, Express, PDFKit (Belege als PDF)
+- **Backend:** Node.js 22, Express, PDFKit (Belege als PDF), swissqrbill (QR-Zahlteil), Nodemailer (SMTP)
 - **Datenbank:** MySQL 8 (InnoDB, Transaktionen, Fremdschlüssel)
 - **Betrieb:** Docker Compose **oder** native Installation auf CentOS Stream 9/10 (systemd + nginx)
 
 ```
 web/      React-Frontend (wird zu statischen Dateien gebaut)
 server/   REST-API, Geschäftslogik, Schema (src/schema.sql), PDF-Erzeugung
-deploy/   CentOS-Installationsskript, systemd-Unit, nginx-Konfiguration, Backup-Skript
+deploy/   CentOS-Installations- und Update-Skript, systemd-Unit, nginx-Konfiguration, Backup-Skript
 ```
 
 ## Schnellstart mit Docker (lokal oder auf dem Server)
@@ -79,7 +84,6 @@ systemctl status strawberryerp                         # Dienststatus
 journalctl -u strawberryerp -f                         # Log
 ```
 
-**Update:** `git pull && sudo bash deploy/install-centos.sh` (idempotent; Daten bleiben erhalten).
 
 **HTTPS:** `dnf install certbot python3-certbot-nginx && certbot --nginx -d erp.ihre-domain.ch`,
 danach in `/etc/strawberryerp.env` `COOKIE_SECURE=true` setzen und `systemctl restart strawberryerp`.
@@ -93,6 +97,38 @@ echo '15 2 * * * root /opt/strawberryerp-backup.sh' | sudo tee /etc/cron.d/straw
 
 Mit Docker: `docker compose exec db sh -c 'mysqldump -ustrawberry -p"$MYSQL_PASSWORD" strawberryerp' | gzip > backup.sql.gz`
 
+## Updates auf neue Releases
+
+Unter *Administration → System & Updates* zeigt StrawberryERP die installierte Version und meldet, wenn auf GitHub ein neueres Release vorliegt
+(abschaltbar mit `UPDATE_CHECK=false`; es werden dabei keine Daten übermittelt).
+
+**CentOS (native Installation):**
+
+```bash
+cd /root/StrawberryERP          # das bei der Installation geklonte Repository
+sudo bash deploy/update.sh      # neuestes Release; oder gezielt: deploy/update.sh v1.2.0
+```
+
+`deploy/update.sh --check` zeigt nur an, ob ein Update verfügbar ist. Das Skript
+
+1. sichert die Datenbank (`/var/backups/strawberryerp`),
+2. checkt das Release aus, baut die Anwendung neu und startet den Dienst,
+3. prüft, ob der Dienst antwortet,
+4. stellt bei einem Fehlstart automatisch die vorherige Version **und** die Datenbanksicherung wieder her.
+
+Einmalig beim Wechsel von 1.0 (enthält das Update-Skript noch nicht): `git fetch --tags && git checkout v1.1.0 && sudo bash deploy/update.sh`
+
+**Docker:**
+
+```bash
+docker compose exec db sh -c 'mysqldump -ustrawberry -p"$MYSQL_PASSWORD" --no-tablespaces strawberryerp' | gzip > backup-vor-update.sql.gz
+git fetch --tags && git checkout v1.2.0
+docker compose up -d --build
+```
+
+**Datenbankschema:** Änderungen werden als versionierte Migrationen ausgeliefert (`server/src/migrations.js`) und beim Start der neuen Version
+automatisch und genau einmal ausgeführt; der Stand steht in der Tabelle `schema_migrations`. Ein manueller Eingriff ist nicht nötig.
+
 ## Konfiguration (Umgebungsvariablen)
 
 | Variable | Bedeutung |
@@ -103,6 +139,7 @@ Mit Docker: `docker compose exec db sh -c 'mysqldump -ustrawberry -p"$MYSQL_PASS
 | `SEED_DEMO` | `true` = Beispieldaten beim ersten Start |
 | `COOKIE_SECURE` | `true`, sobald die Anwendung über HTTPS läuft |
 | `HOST`, `PORT` | Bind-Adresse und Port des Servers (Standard `0.0.0.0:3000`) |
+| `UPDATE_CHECK` | `false` = keine Abfrage bei GitHub nach neuen Releases |
 
 Das Datenbankschema wird beim Start automatisch angelegt (`server/src/schema.sql`), ebenso Rollen, Kontenplan und das laufende Geschäftsjahr.
 
@@ -117,6 +154,19 @@ Belege erzeugen automatisch Buchungen (Konten unter *Administration → Firma & 
 | Rechnung stornieren | 3200 Erlöse, 2200 MwSt | 1100 Debitoren |
 | Lieferantenrechnung | Aufwandkonto, 1170 Vorsteuer | 2000 Kreditoren |
 | Zahlung an Lieferant | 2000 Kreditoren | 1020 Bank |
+| Kursdifferenz bei Zahlung | 6940 Kursverluste | 6990 Kursgewinne |
+
+Erlöse werden auf das beim Artikel hinterlegte Erlöskonto gebucht (ohne Angabe: Standard-Erlöskonto) und tragen die Kostenstelle des Belegs.
+
+**Fremdwährungen:** Die Buchhaltung läuft in der Basiswährung (Standard CHF). Belege in Fremdwährung werden zum Belegkurs gebucht;
+bei der Zahlung wird der Kurs des Zahlungstags erfasst und die Differenz automatisch als Kursgewinn oder -verlust verbucht.
+Kurse werden unter *Administration → Währungen* gepflegt und pro Beleg vorgeschlagen.
+
+**Bestellwesen:** Bestellung erfassen (optional mit Bestellvorschlag aus Artikeln unter Mindestbestand) → auslösen → Wareneingang
+(auch in Teilmengen) bucht das Lager und führt den Einstandspreis nach → Lieferantenrechnung aus der Bestellung erzeugt den Kreditor.
+
+**QR-Rechnung:** Sobald in den Firmendaten eine gültige CH/LI-IBAN hinterlegt ist, erhält jede gebuchte Rechnung in CHF oder EUR den
+QR-Zahlteil (abschaltbar im Beleglayout). Mit einer QR-IBAN wird eine 27-stellige QR-Referenz erzeugt, sonst eine Creditor Reference.
 
 **Jahresabschluss** (*Finanzen → Jahresabschluss*):
 
@@ -144,11 +194,11 @@ Der Lagerabgang wird beim Ausliefern des Auftrags gebucht – oder beim Buchen d
 5. Kunden, Lieferanten und Artikel erfassen; Anfangsbestände als Wareneingang buchen.
 6. Eröffnungssalden (z.B. Bankguthaben, Eigenkapital) als manuelle Buchung im Journal erfassen.
 
-## Bekannte Grenzen (Stand 1.0)
+## Bekannte Grenzen (Stand 1.1)
 
-- Keine QR-Rechnung (Swiss QR-Bill) und kein E-Mail-Versand der Belege – PDFs werden heruntergeladen/gedruckt
-- Eine Währung, ein Erlöskonto für alle Artikel, keine Kostenstellen
-- Kein Wareneinkauf mit Bestellungen (Wareneingang wird direkt im Lager gebucht)
+- Kein automatischer Abgleich von Zahlungseingängen (camt.053/054) – Zahlungen werden manuell erfasst
+- Keine Neubewertung offener Fremdwährungsposten zum Stichtag; Kursdifferenzen entstehen bei der Zahlung
+- Kurse werden manuell gepflegt (kein automatischer Kursabruf)
 - Die MwSt-Übersicht ist eine Auswertungshilfe und ersetzt nicht die offizielle Abrechnung; das System ersetzt keine Treuhand-/Revisionsprüfung
 
 ## Entwicklung
@@ -160,3 +210,8 @@ docker compose up -d --build
 ```
 
 Das Frontend (`web/`) lässt sich auch mit `npm run dev` starten; der Vite-Server leitet `/api` an `localhost:3000` weiter.
+
+E-Mail-Versand lokal testen: `docker compose --profile dev up -d` startet zusätzlich Mailpit (Postfach unter <http://localhost:8025>);
+in der App als SMTP-Server `mailpit`, Port `1025`, ohne Anmeldung eintragen.
+
+Schemaänderungen: neuen Eintrag mit der nächsten Versionsnummer in `server/src/migrations.js` anhängen – bestehende Einträge nie ändern.

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, fmtDateTime } from '../lib.js';
+import { api, fmtDate, fmtDateTime } from '../lib.js';
 import { useAuth } from '../auth.js';
 import { AutoField, DataTable, Field, Icon, Modal, PageHead, useToast } from '../components/ui.jsx';
 
@@ -187,8 +187,8 @@ export function CompanySettings() {
         { name: 'street', label: 'Strasse', span: 2 }, { name: 'country', label: 'Land' },
         { name: 'zip', label: 'PLZ' }, { name: 'city', label: 'Ort', span: 2 },
         { name: 'phone', label: 'Telefon' }, { name: 'email', label: 'E-Mail', type: 'email' }, { name: 'website', label: 'Website' },
-        { name: 'vat_no', label: 'UID / MwSt-Nr.', placeholder: 'CHE-123.456.789 MWST' }, { name: 'bank_name', label: 'Bank' }, { name: 'iban', label: 'IBAN' },
-        { name: 'bic', label: 'BIC / SWIFT' }, { name: 'currency', label: 'Währung' }, { name: 'default_payment_terms', label: 'Zahlungsfrist Standard (Tage)', type: 'number' },
+        { name: 'vat_no', label: 'UID / MwSt-Nr.', placeholder: 'CHE-123.456.789 MWST' }, { name: 'bank_name', label: 'Bank' }, { name: 'iban', label: 'IBAN', hint: 'CH/LI-IBAN oder QR-IBAN – wird für die QR-Rechnung verwendet' },
+        { name: 'bic', label: 'BIC / SWIFT' }, { name: 'currency', label: 'Basiswährung', hint: 'Währung der Buchhaltung – nach den ersten Buchungen nicht mehr ändern' }, { name: 'default_payment_terms', label: 'Zahlungsfrist Standard (Tage)', type: 'number' },
         { name: 'quote_validity_days', label: 'Gültigkeit Offerten (Tage)', type: 'number' }, { name: 'default_vat', label: 'Standard-MwSt-Satz (%)', type: 'number' },
         { name: 'vat_rates', label: 'MwSt-Sätze (%)', list: true, hint: 'Mit Strichpunkt getrennt' },
       ]} />
@@ -196,7 +196,8 @@ export function CompanySettings() {
         hint="Belegnummern werden fortlaufend vergeben, z.B. RE-2026-0001. Mit Jahreszahl beginnt die Zählung in jedem Jahr neu."
         fields={[
           { name: 'quotePrefix', label: 'Präfix Offerten', required: true }, { name: 'orderPrefix', label: 'Präfix Aufträge', required: true },
-          { name: 'invoicePrefix', label: 'Präfix Rechnungen', required: true }, { name: 'digits', label: 'Anzahl Stellen', type: 'number' },
+          { name: 'invoicePrefix', label: 'Präfix Rechnungen', required: true }, { name: 'purchasePrefix', label: 'Präfix Bestellungen', required: true },
+          { name: 'digits', label: 'Anzahl Stellen', type: 'number' },
           { name: 'includeYear', label: 'Jahreszahl in der Nummer', type: 'checkbox', span: 2 },
         ]} />
       {accounts.length > 0 && (
@@ -205,6 +206,7 @@ export function CompanySettings() {
           fields={[
             acc('receivables', 'Debitoren'), acc('payables', 'Kreditoren'), acc('bank', 'Standard-Zahlungskonto'), acc('revenue', 'Erlöskonto'),
             acc('vatPayable', 'Geschuldete MwSt'), acc('vatInput', 'Vorsteuer'), acc('retainedEarnings', 'Gewinnvortrag'), acc('yearResult', 'Jahresgewinn/-verlust'),
+            acc('fxGain', 'Kursgewinne'), acc('fxLoss', 'Kursverluste'),
           ]} />
       )}
     </div>
@@ -342,6 +344,7 @@ export function LayoutSettings() {
                 {check('showUnit', 'Spalte Einheit')}
                 {check('showDiscount', 'Spalte Rabatt (falls vorhanden)')}
                 {check('showBankDetails', 'Bankverbindung auf Rechnung')}
+                {check('showQrBill', 'QR-Rechnung (Zahlteil) auf Rechnung')}
               </div>
             </div>
           </div>
@@ -356,6 +359,8 @@ export function LayoutSettings() {
               {textField('orderClosing', 'Auftragsbestätigung – Schlusstext')}
               {textField('invoiceIntro', 'Rechnung – Einleitung')}
               {textField('invoiceClosing', 'Rechnung – Schlusstext')}
+              {textField('purchaseIntro', 'Bestellung – Einleitung')}
+              {textField('purchaseClosing', 'Bestellung – Schlusstext')}
               {textField('footerText', 'Fusszeile (leer = Firmenangaben)')}
             </div>
           </div>
@@ -366,7 +371,7 @@ export function LayoutSettings() {
             <h2>Vorschau</h2><div className="spacer" />
             {previewUrl && <a className="btn sm" href={previewUrl} target="_blank" rel="noreferrer"><Icon name="pdf" /> In neuem Tab</a>}
             <select className="input" style={{ width: 200 }} value={type} onChange={(e) => setType(e.target.value)}>
-              <option value="invoice">Rechnung</option><option value="quote">Offerte</option><option value="order">Auftragsbestätigung</option>
+              <option value="invoice">Rechnung</option><option value="quote">Offerte</option><option value="order">Auftragsbestätigung</option><option value="purchase">Bestellung</option>
             </select>
           </div>
           <div className="card-body">
@@ -394,5 +399,148 @@ export function AuditLog() {
         { key: 'details', label: 'Details' },
       ]} />
     </>
+  );
+}
+
+// ---------- E-Mail (SMTP) ----------
+const MAIL_TEXTS = [['quote', 'Offerte'], ['order', 'Auftragsbestätigung'], ['invoice', 'Rechnung'], ['purchase', 'Bestellung']];
+
+export function MailSettings() {
+  const { settings, reloadSettings } = useAuth();
+  const toast = useToast();
+  const [form, setForm] = useState(null);
+  const [testTo, setTestTo] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (settings?.mail && !form) setForm({ ...settings.mail, password: '' }); }, [settings, form]);
+  if (!form) return <div className="empty">Lädt…</div>;
+  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const input = (name, label, props = {}) => (
+    <Field label={label} hint={props.hint} className={props.className}>
+      <input className="input" type={props.type || 'text'} placeholder={props.placeholder} autoComplete="off" value={form[name] ?? ''} onChange={(e) => set({ [name]: e.target.value })} />
+    </Field>
+  );
+  const save = async (e) => {
+    e?.preventDefault();
+    try {
+      const saved = await api('/settings/mail', { method: 'PUT', body: { ...form, port: Number(form.port) || 587 } });
+      setForm({ ...saved, password: '' });
+      await reloadSettings();
+      toast('E-Mail-Einstellungen gespeichert.');
+      return true;
+    } catch (err) { toast.error(err.message); return false; }
+  };
+  const test = async () => {
+    if (!testTo) return toast.error('Bitte eine Empfängeradresse für den Test angeben.');
+    setBusy(true);
+    try {
+      if (!(await save())) return undefined;
+      await api('/mail-test', { method: 'POST', body: { to: testTo } });
+      return toast(`Testnachricht an ${testTo} gesendet.`);
+    } catch (err) { return toast.error(err.message); } finally { setBusy(false); }
+  };
+  return (
+    <form className="stack" onSubmit={save}>
+      <PageHead title="E-Mail" subtitle="SMTP-Server für den Versand von Offerten, Auftragsbestätigungen, Rechnungen und Bestellungen als PDF">
+        <button className="btn primary"><Icon name="check" /> Speichern</button>
+      </PageHead>
+      <div className="card">
+        <div className="card-head"><h2>Postausgangsserver (SMTP)</h2>{form.configured ? <span className="badge green">Eingerichtet</span> : <span className="badge amber">Nicht eingerichtet</span>}</div>
+        <div className="card-body">
+          <div className="form-grid cols-3">
+            {input('host', 'SMTP-Server', { placeholder: 'smtp.ihr-provider.ch', className: 'span-2' })}
+            {input('port', 'Port', { type: 'number', hint: '587 (STARTTLS) oder 465 (TLS)' })}
+            {input('user', 'Benutzername', { hint: 'Leer = ohne Anmeldung' })}
+            <Field label="Passwort" hint={form.passwordSet ? 'Gespeichert – leer lassen, um es beizubehalten' : 'Wird nur auf dem Server gespeichert'}>
+              <input className="input" type="password" autoComplete="new-password" placeholder={form.passwordSet ? '••••••••' : ''} value={form.password} onChange={(e) => set({ password: e.target.value })} />
+            </Field>
+            <div className="field" style={{ justifyContent: 'flex-end' }}>
+              <label className="check"><input type="checkbox" checked={!!form.secure} onChange={(e) => set({ secure: e.target.checked })} /> TLS direkt (Port 465)</label>
+            </div>
+            {input('fromName', 'Absendername', { placeholder: settings?.company?.name })}
+            {input('fromAddress', 'Absenderadresse *', { type: 'email', placeholder: 'buchhaltung@ihre-firma.ch' })}
+            {input('replyTo', 'Antwort an (Reply-To)', { type: 'email' })}
+            {input('bcc', 'Blindkopie (BCC) jeder Nachricht', { type: 'email', hint: 'z.B. für die eigene Ablage' })}
+          </div>
+          <div className="row" style={{ marginTop: 18 }}>
+            <input className="input" style={{ maxWidth: 300 }} type="email" placeholder="Testnachricht an …" value={testTo} onChange={(e) => setTestTo(e.target.value)} />
+            <button type="button" className="btn" disabled={busy} onClick={test}><Icon name="mail" /> {busy ? 'Sendet…' : 'Speichern & Testnachricht senden'}</button>
+          </div>
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-head"><h2>Textvorlagen</h2></div>
+        <div className="card-body stack">
+          <p className="muted small" style={{ margin: 0 }}>Platzhalter: {'{nummer}'}, {'{kunde}'}, {'{datum}'}, {'{faellig}'}, {'{gueltig}'}, {'{waehrung}'}, {'{total}'}, {'{firma}'}. Betreff und Text lassen sich vor jedem Versand anpassen.</p>
+          {MAIL_TEXTS.map(([key, label]) => (
+            <div className="form-grid" key={key} style={{ gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 2fr)' }}>
+              {input(`${key}Subject`, `${label} – Betreff`)}
+              <Field label={`${label} – Text`}><textarea className="input" rows={4} value={form[`${key}Body`] || ''} onChange={(e) => set({ [`${key}Body`]: e.target.value })} /></Field>
+            </div>
+          ))}
+        </div>
+      </div>
+    </form>
+  );
+}
+
+// ---------- System & Updates ----------
+export function SystemInfo() {
+  const toast = useToast();
+  const [info, setInfo] = useState(null);
+  const load = useCallback((refresh) => {
+    setInfo(null);
+    api(`/system${refresh ? '?refresh=1' : ''}`).then(setInfo).catch((e) => toast.error(e.message));
+  }, [toast]);
+  useEffect(() => { load(false); }, [load]);
+  if (!info) return <div className="empty">Lädt…</div>;
+  const tag = info.latest?.tag;
+  return (
+    <div className="stack">
+      <PageHead title="System & Updates" subtitle="Installierte Version, verfügbare Releases und Vorgehen beim Update">
+        <button className="btn" onClick={() => load(true)}><Icon name="refresh" /> Jetzt prüfen</button>
+      </PageHead>
+      {info.updateAvailable && (
+        <div className="alert ok"><b>Neue Version {tag} verfügbar</b> (veröffentlicht am {fmtDate(info.latest.published_at)}). <a href={info.latest.url} target="_blank" rel="noreferrer">Release-Notizen ansehen</a></div>
+      )}
+      {!info.updateAvailable && tag && <div className="alert info">StrawberryERP ist aktuell. Neuestes Release: {tag}.</div>}
+      {info.latest?.error && <div className="alert">{info.latest.error}</div>}
+      {info.latest?.disabled && <div className="alert">Die automatische Versionsprüfung ist ausgeschaltet (UPDATE_CHECK=false).</div>}
+      <div className="grid-2" style={{ alignItems: 'start' }}>
+        <div className="card">
+          <div className="card-head"><h2>Installation</h2></div>
+          <div className="card-body">
+            <dl className="dl">
+              <dt>StrawberryERP</dt><dd>{info.version}</dd>
+              <dt>Datenbankschema</dt><dd>Version {info.schemaVersion}</dd>
+              <dt>Datenbank</dt><dd>{info.database}</dd>
+              <dt>Node.js</dt><dd>{info.node}</dd>
+              <dt>Release-Quelle</dt><dd>github.com/{info.repo}</dd>
+              <dt>Zuletzt geprüft</dt><dd>{info.checkedAt ? fmtDateTime(info.checkedAt.replace('T', ' ')) + ' UTC' : '–'}</dd>
+            </dl>
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-head"><h2>So wird aktualisiert</h2></div>
+          <div className="card-body stack">
+            <div>
+              <h3>CentOS (native Installation)</h3>
+              <pre className="code">cd /root/StrawberryERP{'\n'}sudo bash deploy/update.sh{tag && info.updateAvailable ? ` ${tag}` : ''}</pre>
+              <p className="muted small" style={{ margin: 0 }}>Das Skript sichert zuerst die Datenbank, holt das Release, baut die Anwendung neu und prüft danach, ob der Dienst läuft. Schlägt der Start fehl, wird automatisch die vorherige Version wiederhergestellt.</p>
+            </div>
+            <div>
+              <h3>Docker</h3>
+              <pre className="code">git fetch --tags && git checkout {tag || 'vX.Y.Z'}{'\n'}docker compose up -d --build</pre>
+            </div>
+            <p className="muted small" style={{ margin: 0 }}>Anpassungen am Datenbankschema werden beim Start der neuen Version automatisch und genau einmal ausgeführt (Migrationen). Ein Update ist ohne Datenverlust wiederholbar.</p>
+          </div>
+        </div>
+      </div>
+      {info.updateAvailable && info.latest.notes && (
+        <div className="card">
+          <div className="card-head"><h2>Release-Notizen {tag}</h2></div>
+          <div className="card-body"><pre className="code" style={{ whiteSpace: 'pre-wrap' }}>{info.latest.notes}</pre></div>
+        </div>
+      )}
+    </div>
   );
 }

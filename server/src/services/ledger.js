@@ -27,7 +27,7 @@ export async function postEntry(conn, { date, text, ref_type = 'manual', ref_id 
     if (debit < 0 || credit < 0) throw new HttpError(400, 'Soll/Haben dürfen nicht negativ sein.');
     if (!debit && !credit) continue;
     const account_id = l.account_id ? Number(l.account_id) : await accountIdByNumber(conn, l.account);
-    clean.push({ account_id, debit, credit });
+    clean.push({ account_id, debit, credit, cost_center_id: l.cost_center_id ? Number(l.cost_center_id) : null });
   }
   if (clean.length < 2) throw new HttpError(400, 'Eine Buchung benötigt mindestens zwei Zeilen mit Betrag.');
   const sumD = round2(clean.reduce((s, l) => s + l.debit, 0));
@@ -38,8 +38,8 @@ export async function postEntry(conn, { date, text, ref_type = 'manual', ref_id 
     'INSERT INTO journal_entries (fiscal_year_id, date, text, ref_type, ref_id, created_by) VALUES (?,?,?,?,?,?)',
     [fy.id, date, String(text || '').slice(0, 255) || 'Buchung', ref_type, ref_id, user_id], conn,
   );
-  await q('INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES ?',
-    [clean.map((l) => [res.insertId, l.account_id, l.debit, l.credit])], conn);
+  await q('INSERT INTO journal_lines (entry_id, account_id, debit, credit, cost_center_id) VALUES ?',
+    [clean.map((l) => [res.insertId, l.account_id, l.debit, l.credit, l.cost_center_id])], conn);
   return res.insertId;
 }
 

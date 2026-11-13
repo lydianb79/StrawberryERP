@@ -17,6 +17,8 @@ export const PERMISSIONS = [
   { key: 'suppliers.write', group: 'Lieferanten', label: 'Lieferanten bearbeiten' },
   { key: 'inventory.read', group: 'Lager', label: 'Artikel & Lager ansehen' },
   { key: 'inventory.write', group: 'Lager', label: 'Artikel bearbeiten, Lager buchen' },
+  { key: 'purchasing.read', group: 'Einkauf', label: 'Bestellungen ansehen' },
+  { key: 'purchasing.write', group: 'Einkauf', label: 'Bestellungen erstellen, Wareneingang buchen' },
   { key: 'quotes.read', group: 'Offerten', label: 'Offerten ansehen' },
   { key: 'quotes.write', group: 'Offerten', label: 'Offerten erstellen/bearbeiten' },
   { key: 'orders.read', group: 'Aufträge', label: 'Aufträge ansehen' },

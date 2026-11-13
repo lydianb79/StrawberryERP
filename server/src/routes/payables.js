@@ -7,8 +7,11 @@ import * as svc from '../services/payables.js';
 const r = Router();
 
 const SELECT = `SELECT si.*, s.company AS supplier_name, a.number AS account_number, a.name AS account_name,
+                       ROUND(si.total * si.exchange_rate, 2) AS base_total, ROUND((si.total - si.paid_amount) * si.exchange_rate, 2) AS base_open,
+                       po.number AS purchase_order_number,
                        (si.status <> 'paid' AND si.due_date < CURDATE()) AS overdue
-                  FROM supplier_invoices si JOIN suppliers s ON s.id = si.supplier_id JOIN accounts a ON a.id = si.expense_account_id`;
+                  FROM supplier_invoices si JOIN suppliers s ON s.id = si.supplier_id JOIN accounts a ON a.id = si.expense_account_id
+                  LEFT JOIN documents po ON po.id = si.purchase_order_id`;
 
 async function detail(id) {
   const si = await one(`${SELECT} WHERE si.id = ?`, [id]);

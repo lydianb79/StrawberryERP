@@ -8,7 +8,7 @@ import { moveStock } from '../services/stock.js';
 
 const partnerFields = {
   number: 's', company: 's', contact_name: 's', email: 's', phone: 's', street: 's', zip: 's', city: 's',
-  country: 's', vat_no: 's', payment_terms_days: 'n', notes: 's', active: 'b',
+  country: 's', vat_no: 's', payment_terms_days: 'n', notes: 's', active: 'b', currency: 's',
 };
 const partnerSearch = ['company', 'number', 'contact_name', 'city', 'email'];
 
@@ -59,6 +59,24 @@ products.post('/:id/movements', can('inventory.write'), h(async (req, res) => {
 products.use(crudRouter({
   table: 'products', entity: 'product', perm: 'inventory',
   fields: { sku: 's', name: 's', description: 's', unit: 's', sale_price: 'n', purchase_price: 'n', vat_rate: 'n',
-    is_stock_item: 'b', min_stock: 'n', location: 's', active: 'b' },
+    is_stock_item: 'b', min_stock: 'n', location: 's', active: 'b', revenue_account_id: 'i', supplier_id: 'i' },
   required: ['sku', 'name'], search: ['sku', 'name', 'description'], orderBy: 'sku',
 }));
+
+// ---------- Währungen & Kostenstellen ----------
+export const currencies = crudRouter({
+  table: 'currencies', entity: 'currency', perm: 'admin.settings', readPerm: null,
+  fields: { code: 's', name: 's', rate: 'n', active: 'b' }, required: ['code', 'name'], orderBy: 'code',
+  validate: (data) => {
+    if (data.code !== undefined) {
+      data.code = String(data.code).toUpperCase();
+      if (!/^[A-Z]{3}$/.test(data.code)) throw new HttpError(400, 'Der Währungscode besteht aus drei Buchstaben (z.B. EUR).');
+    }
+    if (data.rate !== undefined && !(data.rate > 0)) throw new HttpError(400, 'Der Kurs muss grösser als 0 sein.');
+  },
+});
+
+export const costCenters = crudRouter({
+  table: 'cost_centers', entity: 'cost_center', perm: 'accounting',
+  fields: { code: 's', name: 's', active: 'b' }, required: ['code', 'name'], search: ['code', 'name'], orderBy: 'code',
+});

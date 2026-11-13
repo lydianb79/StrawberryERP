@@ -37,6 +37,7 @@ export const DOC = {
   quote: { path: 'offerten', title: 'Offerten', single: 'Offerte', perm: 'quotes', dateLabel: 'Gültig bis' },
   order: { path: 'auftraege', title: 'Aufträge', single: 'Auftrag', perm: 'orders' },
   invoice: { path: 'rechnungen', title: 'Rechnungen', single: 'Rechnung', perm: 'invoices', dateLabel: 'Fällig am' },
+  purchase: { path: 'bestellungen', title: 'Bestellungen', single: 'Bestellung', perm: 'purchasing' },
 };
 
 export const STATUS = {
@@ -51,6 +52,9 @@ export const STATUS = {
   partial: ['Teilbezahlt', 'amber'],
   paid: ['Bezahlt', 'green'],
   overdue: ['Überfällig', 'red'],
+  ordered: ['Bestellt', 'blue'],
+  partly: ['Teilweise erhalten', 'amber'],
+  received: ['Erhalten', 'green'],
 };
 
 export const ACCOUNT_TYPES = { asset: 'Aktiven', liability: 'Fremdkapital', equity: 'Eigenkapital', revenue: 'Ertrag', expense: 'Aufwand' };

@@ -6,6 +6,9 @@ import { HttpError, h } from '../util.js';
 import { validatePassword } from './auth.js';
 import { getSettings, saveSetting, getLogo, SETTING_KEYS, DEFAULTS } from '../services/settings.js';
 import { renderDocumentPdf, sampleDocument } from '../services/pdf.js';
+import { sendTestMail, mailConfigured } from '../services/mail.js';
+import { systemInfo, VERSION } from '../services/system.js';
+import { has } from '../auth.js';
 
 const r = Router();
 
@@ -129,10 +132,13 @@ r.delete('/roles/:id', can('admin.users'), h(async (req, res) => {
 }));
 
 // ---------- Einstellungen ----------
-r.get('/settings', h(async (_req, res) => {
+r.get('/settings', h(async (req, res) => {
   const settings = await getSettings();
   const logo = await getLogo();
-  res.json({ ...settings, hasLogo: !!logo });
+  // SMTP-Zugangsdaten verlassen den Server nie; Nicht-Admins sehen nur, ob der Versand eingerichtet ist.
+  const { password, ...mail } = settings.mail;
+  const mailPublic = has(req.user, 'admin.settings') ? { ...mail, passwordSet: !!password } : {};
+  res.json({ ...settings, mail: { ...mailPublic, configured: mailConfigured(settings.mail) }, hasLogo: !!logo, version: VERSION });
 }));
 
 r.put('/settings/:key', can('admin.settings'), h(async (req, res) => {
@@ -141,9 +147,14 @@ r.put('/settings/:key', can('admin.settings'), h(async (req, res) => {
   const value = {};
   for (const k of Object.keys(DEFAULTS[key])) if (k in (req.body || {})) value[k] = req.body[k];
   const current = (await getSettings())[key];
+  if (key === 'mail' && !value.password) delete value.password; // leeres Feld = Passwort unverändert lassen
+  if (key === 'mail' && req.body?.clearPassword) value.password = '';
+  if (key === 'company' && value.currency) value.currency = String(value.currency).toUpperCase().slice(0, 3);
   await saveSetting(key, { ...current, ...value });
   await audit(req, 'update', 'settings', key);
-  res.json((await getSettings())[key]);
+  const saved = (await getSettings())[key];
+  if (key === 'mail') { saved.passwordSet = !!saved.password; delete saved.password; }
+  res.json(saved);
 }));
 
 r.get('/settings-logo', h(async (_req, res) => {
@@ -185,6 +196,17 @@ r.post('/layout-preview', can('admin.settings'), h(async (req, res) => {
   sample.doc.valid_until = sample.doc.due_date;
   res.set('Content-Type', 'application/pdf');
   renderDocumentPdf({ ...sample, settings, logo: await getLogo() }, res);
+}));
+
+// ---------- E-Mail-Test & System ----------
+r.post('/mail-test', can('admin.settings'), h(async (req, res) => {
+  await sendTestMail(undefined, req.body?.to);
+  await audit(req, 'mail-test', 'settings', 'mail', req.body?.to);
+  res.status(204).end();
+}));
+
+r.get('/system', can('admin.settings'), h(async (req, res) => {
+  res.json(await systemInfo(req.query.refresh === '1'));
 }));
 
 // ---------- Protokoll ----------

@@ -10,6 +10,7 @@ function useReport(path, deps = []) {
   const [data, setData] = useState(null);
   useEffect(() => {
     setData(null);
+    if (!path) return;
     api(path).then(setData).catch((e) => toast.error(e.message));
   }, [path, toast, ...deps]); // eslint-disable-line react-hooks/exhaustive-deps
   return data;
@@ -75,11 +76,13 @@ function OpenItems({ kind }) {
           { key: 'date', label: 'Datum', render: (r) => fmtDate(r.date), csv: (r) => fmtDate(r.date) },
           { key: 'due_date', label: 'Fällig', render: (r) => fmtDate(r.due_date), csv: (r) => fmtDate(r.due_date) },
           { key: 'days_overdue', label: 'Tage überfällig', num: true, render: (r) => (r.days_overdue > 0 ? <span className="neg">{r.days_overdue}</span> : '–') },
+          { key: 'currency', label: 'Whg.' },
           { key: 'total', label: 'Betrag', num: true, render: (r) => money(r.total) },
-          { key: 'open_amount', label: 'Offen', num: true, render: (r) => <b>{money(r.open_amount)}</b> },
+          { key: 'open_amount', label: 'Offen', num: true, render: (r) => money(r.open_amount) },
+          { key: 'base_open', label: 'Offen (Basis)', num: true, render: (r) => <b>{money(r.base_open)}</b> },
         ]}
         footer={(list) => (
-          <tr><td colSpan={6}>Total</td><td className="num">{money(list.reduce((s, r) => s + r.total, 0))}</td><td className="num">{money(list.reduce((s, r) => s + r.open_amount, 0))}</td></tr>
+          <tr><td colSpan={9}>Total in Basiswährung</td><td className="num">{money(list.reduce((s, r) => s + r.base_open, 0))}</td></tr>
         )} />
     </div>
   );
@@ -122,6 +125,41 @@ function Vat({ range }) {
   );
 }
 
+function CostCenterReport() {
+  const [years, setYears] = useState([]);
+  const [yearId, setYearId] = useState('');
+  useEffect(() => {
+    api('/accounting/fiscal-years').then((list) => {
+      setYears(list);
+      const now = new Date().toISOString().slice(0, 10);
+      setYearId((list.find((y) => y.start_date <= now && y.end_date >= now) || list[0])?.id || '');
+    }).catch(() => {});
+  }, []);
+  const data = useReport(yearId ? `/accounting/cost-center-report?year_id=${yearId}` : null);
+  return (
+    <div className="stack">
+      <div className="row no-print">
+        <select className="input" style={{ width: 220 }} value={yearId} onChange={(e) => setYearId(e.target.value)}>
+          {years.map((y) => <option key={y.id} value={y.id}>Geschäftsjahr {y.name}</option>)}
+        </select>
+      </div>
+      {!data ? <div className="empty">Lädt…</div> : (
+        <DataTable searchable={false} rows={data.rows} exportName="kostenstellen" empty="Noch keine Erfolgsbuchungen in diesem Jahr."
+          columns={[
+            { key: 'code', label: 'Kostenstelle' }, { key: 'name', label: 'Bezeichnung', render: (r) => <b>{r.name}</b> },
+            { key: 'revenue', label: 'Ertrag', num: true, render: (r) => money(r.revenue) },
+            { key: 'expense', label: 'Aufwand', num: true, render: (r) => money(r.expense) },
+            { key: 'result', label: 'Ergebnis', num: true, render: (r) => <b className={r.result >= 0 ? 'pos' : 'neg'}>{money(r.result)}</b> },
+          ]}
+          footer={(list) => (
+            <tr><td colSpan={2}>Total</td><td className="num">{money(list.reduce((s, r) => s + r.revenue, 0))}</td>
+              <td className="num">{money(list.reduce((s, r) => s + r.expense, 0))}</td><td className="num">{money(list.reduce((s, r) => s + r.result, 0))}</td></tr>
+          )} />
+      )}
+    </div>
+  );
+}
+
 export default function Reports() {
   const [tab, setTab] = useState('sales');
   const [range, setRange] = useState({ from: `${year}-01-01`, to: `${year}-12-31` });
@@ -130,12 +168,13 @@ export default function Reports() {
       <PageHead title="Reports" subtitle="Auswertungen zu Umsatz, offenen Posten, Lager und Mehrwertsteuer">
         <button className="btn" onClick={() => window.print()}>Drucken / PDF</button>
       </PageHead>
-      <Tabs value={tab} onChange={setTab} tabs={[['sales', 'Umsatz'], ['receivables', 'Debitoren-Fälligkeit'], ['payables', 'Kreditoren-Fälligkeit'], ['stock', 'Lagerbewertung'], ['vat', 'MwSt-Übersicht']]} />
+      <Tabs value={tab} onChange={setTab} tabs={[['sales', 'Umsatz'], ['receivables', 'Debitoren-Fälligkeit'], ['payables', 'Kreditoren-Fälligkeit'], ['stock', 'Lagerbewertung'], ['costcenters', 'Kostenstellen'], ['vat', 'MwSt-Übersicht']]} />
       {(tab === 'sales' || tab === 'vat') && <Range range={range} setRange={setRange} />}
       {tab === 'sales' && <Sales range={range} />}
       {tab === 'receivables' && <OpenItems kind="receivables" />}
       {tab === 'payables' && <OpenItems kind="payables" />}
       {tab === 'stock' && <Stock />}
+      {tab === 'costcenters' && <CostCenterReport />}
       {tab === 'vat' && <Vat range={range} />}
     </>
   );

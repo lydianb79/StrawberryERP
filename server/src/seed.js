@@ -9,6 +9,7 @@ import * as docs from './services/documents.js';
 import * as payables from './services/payables.js';
 import { moveStock } from './services/stock.js';
 import { partnerNumber } from './services/numbering.js';
+import { runMigrations } from './migrations.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -50,6 +51,7 @@ const ACCOUNTS = [
 
 export async function migrate() {
   await runScript(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'));
+  const freshInstall = !(await one('SELECT id FROM roles LIMIT 1'));
 
   if (!(await one('SELECT id FROM roles LIMIT 1'))) {
     for (const role of ROLES) {
@@ -67,6 +69,9 @@ export async function migrate() {
     await q('INSERT INTO fiscal_years (name, start_date, end_date) VALUES (?,?,?)', [String(y), `${y}-01-01`, `${y}-12-31`]);
     console.log(`[seed] Geschäftsjahr ${y} angelegt`);
   }
+  // Nach Grundschema, Rollen und Kontenplan, damit Migrationen bestehende Daten ergänzen können.
+  const version = await runMigrations();
+  console.log(`[migration] Schema-Version ${version}${freshInstall ? ' (Neuinstallation)' : ''}`);
   if (!(await one('SELECT id FROM users LIMIT 1'))) {
     const email = (process.env.ADMIN_EMAIL || 'admin@example.com').toLowerCase();
     let password = process.env.ADMIN_PASSWORD;

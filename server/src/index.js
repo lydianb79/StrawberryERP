@@ -8,9 +8,10 @@ import { waitForDb, pool } from './db.js';
 import { migrate } from './seed.js';
 import { authenticate } from './auth.js';
 import { HttpError } from './util.js';
+import { VERSION } from './services/system.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
-import { customers, suppliers, products } from './routes/masterdata.js';
+import { customers, suppliers, products, currencies, costCenters } from './routes/masterdata.js';
 import documentRoutes from './routes/documents.js';
 import payableRoutes from './routes/payables.js';
 import accountingRoutes from './routes/accounting.js';
@@ -45,7 +46,7 @@ app.use(cookieParser());
 app.get('/api/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
-    res.json({ status: 'ok' });
+    res.json({ status: 'ok', version: VERSION });
   } catch {
     res.status(503).json({ status: 'db-unavailable' });
   }
@@ -56,6 +57,8 @@ app.use('/api', authenticate);
 app.use('/api/customers', customers);
 app.use('/api/suppliers', suppliers);
 app.use('/api/products', products);
+app.use('/api/currencies', currencies);
+app.use('/api/cost-centers', costCenters);
 app.use('/api/documents', documentRoutes);
 app.use('/api/payables', payableRoutes);
 app.use('/api/accounting', accountingRoutes);

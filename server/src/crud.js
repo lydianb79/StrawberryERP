@@ -7,8 +7,12 @@ import { HttpError, h } from './util.js';
  * Generischer CRUD-Router für Stammdaten.
  * fields: { spalte: 's' | 'n' | 'b' }  (String, Zahl, Boolean)
  */
-export function crudRouter({ table, entity, perm, fields, required = [], search = [], orderBy = 'id DESC', autoNumber }) {
+export function crudRouter({ table, entity, perm, fields, required = [], search = [], orderBy = 'id DESC', autoNumber, validate, readPerm }) {
   const r = Router();
+  // perm kann 'modul' (→ modul.read / modul.write) oder ein vollständiges Recht wie 'admin.settings' sein.
+  const full = perm.includes('.');
+  const writeGuard = can(full ? perm : `${perm}.write`);
+  const readGuard = readPerm === null ? (_req, _res, next) => next() : can(readPerm || (full ? perm : `${perm}.read`));
 
   const clean = (body, partial = false) => {
     const out = {};
@@ -16,18 +20,20 @@ export function crudRouter({ table, entity, perm, fields, required = [], search 
       if (!(name in body)) continue;
       let v = body[name];
       if (kind === 'n') v = v === '' || v == null ? 0 : Number(v);
+      else if (kind === 'i') v = v === '' || v == null ? null : Number(v);
       else if (kind === 'b') v = v ? 1 : 0;
       else v = v == null || String(v).trim() === '' ? null : String(v).trim();
-      if (kind === 'n' && !Number.isFinite(v)) throw new HttpError(400, `Ungültige Zahl im Feld «${name}».`);
+      if ((kind === 'n' || (kind === 'i' && v !== null)) && !Number.isFinite(v)) throw new HttpError(400, `Ungültige Zahl im Feld «${name}».`);
       out[name] = v;
     }
     for (const name of required) {
       if ((!partial || name in out) && (out[name] == null || out[name] === '')) throw new HttpError(400, `Pflichtfeld fehlt: ${name}`);
     }
+    if (validate) validate(out);
     return out;
   };
 
-  r.get('/', can(`${perm}.read`), h(async (req, res) => {
+  r.get('/', readGuard, h(async (req, res) => {
     const where = [], params = [];
     if (req.query.q && search.length) {
       where.push(`(${search.map((c) => `${c} LIKE ?`).join(' OR ')})`);
@@ -37,13 +43,13 @@ export function crudRouter({ table, entity, perm, fields, required = [], search 
     res.json(await q(`SELECT * FROM ${table} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY ${orderBy} LIMIT 2000`, params));
   }));
 
-  r.get('/:id', can(`${perm}.read`), h(async (req, res) => {
+  r.get('/:id', readGuard, h(async (req, res) => {
     const row = await one(`SELECT * FROM ${table} WHERE id = ?`, [req.params.id]);
     if (!row) throw new HttpError(404, 'Eintrag nicht gefunden');
     res.json(row);
   }));
 
-  r.post('/', can(`${perm}.write`), h(async (req, res) => {
+  r.post('/', writeGuard, h(async (req, res) => {
     const id = await tx(async (conn) => {
       const body = { ...req.body };
       if (autoNumber && !String(body[autoNumber.field] || '').trim()) body[autoNumber.field] = await autoNumber.generate(conn);
@@ -55,7 +61,7 @@ export function crudRouter({ table, entity, perm, fields, required = [], search 
     res.status(201).json(await one(`SELECT * FROM ${table} WHERE id = ?`, [id]));
   }));
 
-  r.put('/:id', can(`${perm}.write`), h(async (req, res) => {
+  r.put('/:id', writeGuard, h(async (req, res) => {
     const data = clean(req.body, true);
     if (autoNumber && autoNumber.field in data && !data[autoNumber.field]) delete data[autoNumber.field];
     if (!Object.keys(data).length) throw new HttpError(400, 'Keine Änderungen übermittelt');
@@ -65,7 +71,7 @@ export function crudRouter({ table, entity, perm, fields, required = [], search 
     res.json(await one(`SELECT * FROM ${table} WHERE id = ?`, [req.params.id]));
   }));
 
-  r.delete('/:id', can(`${perm}.write`), h(async (req, res) => {
+  r.delete('/:id', writeGuard, h(async (req, res) => {
     const result = await q(`DELETE FROM ${table} WHERE id = ?`, [req.params.id]);
     if (!result.affectedRows) throw new HttpError(404, 'Eintrag nicht gefunden');
     await audit(req, 'delete', entity, req.params.id);

@@ -77,7 +77,8 @@ r.get('/journal', can('accounting.read'), h(async (req, res) => {
       ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY e.date DESC, e.id DESC LIMIT 500`, params);
   if (entries.length) {
     const lines = await q(
-      `SELECT l.*, a.number AS account_number, a.name AS account_name FROM journal_lines l JOIN accounts a ON a.id = l.account_id
+      `SELECT l.*, a.number AS account_number, a.name AS account_name, cc.code AS cost_center_code
+         FROM journal_lines l JOIN accounts a ON a.id = l.account_id LEFT JOIN cost_centers cc ON cc.id = l.cost_center_id
         WHERE l.entry_id IN (?) ORDER BY l.id`, [entries.map((e) => e.id)]);
     const byEntry = Map.groupBy(lines, (l) => l.entry_id);
     for (const e of entries) e.lines = byEntry.get(e.id) || [];
@@ -128,6 +129,21 @@ r.get('/trial-balance', can('accounting.read'), h(async (req, res) => {
   const year = await yearOr404(req.query.year_id);
   const rows = await ledger.yearBalances(undefined, year.id);
   res.json({ year, rows: rows.filter((x) => x.debit || x.credit) });
+}));
+
+/** Kostenstellenrechnung: Ertrag, Aufwand und Ergebnis je Kostenstelle. */
+r.get('/cost-center-report', can('accounting.read', 'reports.read'), h(async (req, res) => {
+  const year = await yearOr404(req.query.year_id);
+  const rows = await q(
+    `SELECT cc.id, COALESCE(cc.code, '–') AS code, COALESCE(cc.name, 'Ohne Kostenstelle') AS name,
+            SUM(CASE WHEN a.type = 'revenue' THEN l.credit - l.debit ELSE 0 END) AS revenue,
+            SUM(CASE WHEN a.type = 'expense' THEN l.debit - l.credit ELSE 0 END) AS expense
+       FROM journal_lines l JOIN journal_entries e ON e.id = l.entry_id JOIN accounts a ON a.id = l.account_id
+       LEFT JOIN cost_centers cc ON cc.id = l.cost_center_id
+      WHERE e.fiscal_year_id = ? AND e.ref_type <> 'closing' AND a.type IN ('revenue', 'expense')
+      GROUP BY cc.id, cc.code, cc.name ORDER BY (cc.id IS NULL), cc.code`, [year.id]);
+  for (const row of rows) row.result = round2(row.revenue - row.expense);
+  res.json({ year, rows });
 }));
 
 /** Kontoauszug */

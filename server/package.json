@@ -1,6 +1,6 @@
 {
   "name": "strawberryerp-server",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "StrawberryERP – ERP für KMU (API-Server)",
@@ -9,7 +9,9 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js"
   },
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
@@ -18,6 +20,8 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "mysql2": "^3.11.5",
-    "pdfkit": "^0.15.2"
+    "nodemailer": "^10.5.0",
+    "pdfkit": "^0.15.2",
+    "swissqrbill": "^4.4.4"
   }
 }
