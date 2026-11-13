@@ -17,7 +17,7 @@ import DocumentEditor from './pages/DocumentEditor.jsx';
 import { Receivables, Payables } from './pages/OpenItems.jsx';
 import { Journal, BalanceSheet, IncomeStatement, FiscalYears } from './pages/Accounting.jsx';
 import Reports from './pages/Reports.jsx';
-import { Users, Roles, CompanySettings, LayoutSettings, AuditLog, MailSettings, SystemInfo } from './pages/Admin.jsx';
+import { Users, Roles, Modules, CompanySettings, LayoutSettings, AuditLog, MailSettings, SystemInfo } from './pages/Admin.jsx';
 
 
 const NAV = [
@@ -61,6 +61,7 @@ const NAV = [
   { title: 'Administration', items: [
     { to: '/admin/benutzer', label: 'Benutzer', icon: 'users', perm: 'admin.users' },
     { to: '/admin/rollen', label: 'Rollen & Rechte', icon: 'shield', perm: 'admin.users' },
+    { to: '/admin/module', label: 'Module', icon: 'layout', perm: 'admin.settings' },
     { to: '/admin/firma', label: 'Firma & Nummern', icon: 'building', perm: 'admin.settings' },
     { to: '/admin/waehrungen', label: 'Währungen', icon: 'coins', perm: 'admin.settings' },
     { to: '/admin/layout', label: 'Beleglayout', icon: 'layout', perm: 'admin.settings' },
@@ -209,7 +210,7 @@ function Shell({ children }) {
 function Guard({ perm, children }) {
   const { can } = useAuth();
   if (perm && !can(perm)) {
-    return <div className="card"><div className="empty">Sie haben keine Berechtigung für diesen Bereich.</div></div>;
+    return <div className="card"><div className="empty">Dieser Bereich ist für Ihre Rolle nicht freigegeben oder das Modul ist ausgeschaltet.</div></div>;
   }
   return children;
 }
@@ -231,7 +232,8 @@ export default function App() {
   useEffect(() => { if (user) reloadSettings(); }, [user, reloadSettings]);
 
   const reloadUser = useCallback(() => api('/auth/me').then(setUser).catch(() => setUser(null)), []);
-  const can = useCallback((perm) => !!user && (user.permissions.includes('*') || user.permissions.includes(perm)), [user]);
+  // Der Server liefert die wirksamen Rechte: inklusive eingeschlossener Rechte, ohne ausgeschaltete Module
+  const can = useCallback((perm) => !!user && user.permissions.includes(perm), [user]);
   const logout = useCallback(async () => {
     await api('/auth/logout', { method: 'POST' }).catch(() => {});
     setUser(null);
@@ -284,6 +286,7 @@ export default function App() {
           <Route path="/reports" element={<Guard perm="reports.read"><Reports /></Guard>} />
           <Route path="/admin/benutzer" element={<Guard perm="admin.users"><Users /></Guard>} />
           <Route path="/admin/rollen" element={<Guard perm="admin.users"><Roles /></Guard>} />
+          <Route path="/admin/module" element={<Guard perm="admin.settings"><Modules /></Guard>} />
           <Route path="/admin/firma" element={<Guard perm="admin.settings"><CompanySettings /></Guard>} />
           <Route path="/admin/layout" element={<Guard perm="admin.settings"><LayoutSettings /></Guard>} />
           <Route path="/admin/protokoll" element={<Guard perm="admin.settings"><AuditLog /></Guard>} />

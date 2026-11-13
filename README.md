@@ -36,7 +36,8 @@ Ausgelegt auf Schweizer Verhältnisse (CHF, MwSt-Sätze, Kontenrahmen KMU), Ober
 | **Jahresabschluss** | Abschlussarbeiten (Warenlager in die Bilanz, Bewertung Fremdwährungen), Assistent mit Prüfungen; Abschluss der Erfolgskonten, Sperren des Jahres, Anlegen des Folgejahres, **Saldovortrag als Eröffnungsbilanz**, Gewinnvortrag; rückgängig machbar, solange das Folgejahr offen ist |
 | **Reporting** | Dashboard mit Kennzahlen, Umsatz pro Monat, Top-Kunden/-Artikel, Fälligkeitslisten, Lagerbewertung, MwSt-Übersicht; CSV-Export aller Listen |
 | **Administration** | Firmendaten, Nummernkreise, Standardkonten, Währungen, E-Mail-Server, Protokoll (Audit-Log), System & Updates |
-| **Benutzer & Rollen** | Benutzerverwaltung, rollenbasierter Zugriff mit 30 Einzelrechten, Zwei-Faktor-Anmeldung (TOTP) mit Wiederherstellungscodes, «Passwort vergessen» per E-Mail; vordefinierte Rollen: Administrator, Buchhaltung, Verkauf, Lager, Nur Lesen |
+| **Benutzer & Rollen** | Benutzerverwaltung, rollenbasierter Zugriff mit 30 Einzelrechten, Zwei-Faktor-Anmeldung (TOTP) mit Wiederherstellungscodes, «Passwort vergessen» per E-Mail; 14 vordefinierte Rollen und eine Übersicht «Wer darf was?» (siehe [Rollen und Module](#rollen-und-module)) |
+| **Module** | Der Administrator legt fest, welche Bereiche verwendet werden; ausgeschaltete Module sind für alle ausgeblendet und gesperrt |
 
 ## Technologie
 
@@ -332,21 +333,53 @@ Der Lagerabgang wird beim Ausliefern des Auftrags gebucht – oder beim Buchen d
 - **Zwei-Faktor-Anmeldung** mit Authenticator-App (TOTP), pro Benutzer unter *Konto & Sicherheit* einzurichten. Beim Aktivieren werden zehn einmalig verwendbare Wiederherstellungscodes angezeigt; zusätzlich kann ein Administrator den zweiten Faktor zurücksetzen
 - **Passwort vergessen:** Link per E-Mail, 60 Minuten und einmalig gültig. Voraussetzung ist ein eingerichteter E-Mail-Versand; die *Adresse der Anwendung* in den Firmendaten bestimmt den Link
 - Passwortwechsel, Zurücksetzen und Deaktivieren beenden sofort alle bestehenden Sitzungen des Benutzers
-- Jede API-Route prüft die Berechtigung der Rolle serverseitig
+- Jede API-Route prüft die Berechtigung der Rolle serverseitig; ausgeschaltete Module sind auch für Administratoren gesperrt
 - Ausschliesslich parametrisierte SQL-Abfragen; Security-Header via Helmet (CSP)
 - Buchungen und Zahlungen sind unveränderbar (Storno statt Löschen); alle Aktionen stehen im Protokoll
+
+## Rollen und Module
+
+**Rollen** bestimmen, was eine Person darf; jede Person hat genau eine Rolle. Unter *Administration → Rollen & Rechte* steht zu jeder Rolle,
+wofür sie gedacht ist und auf welche Bereiche sie zugreift. Der Reiter **Übersicht: Wer darf was?** zeigt alle 30 Rechte mit Beschreibung
+als Tabelle über alle Rollen. Wer etwas bearbeiten darf, darf es automatisch auch ansehen (in der Übersicht als blasses Häkchen).
+
+| Rolle | Gedacht für |
+|---|---|
+| Administrator | Vollzugriff, nicht änderbar |
+| Geschäftsleitung | Sieht alles inklusive Lohn und Auswertungen, ändert nichts |
+| Buchhaltung | Ganze Finanzseite inklusive Jahresabschluss, ohne Lohn |
+| Debitorenbuchhaltung | Zahlungseingänge, Mahnwesen, Zahlungsabgleich |
+| Kreditorenbuchhaltung | Lieferantenrechnungen, Zahlungen, Zahlungsdateien |
+| Verkauf | Kunden, Offerten, Aufträge, Rechnungen |
+| Verkaufsleitung | Verkauf mit Auswertungen, Mahnwesen und Projektabrechnung |
+| Einkauf | Lieferanten, Bestellungen, Wareneingang |
+| Lager | Artikel, Lagerbewegungen, Inventur |
+| Projektleitung | Projekte führen, Zeiten aller Personen, Stunden abrechnen |
+| Zeiterfassung | Nur eigene Arbeitszeit buchen |
+| Personal | Lohnabrechnung und Lohnausweise, sonst nichts |
+| Treuhand | Externer Lesezugriff auf Buchhaltung und offene Posten, ohne Lohn |
+| Nur Lesen | Alles ansehen, ohne Lohn und Administration |
+
+Die vordefinierten Rollen lassen sich anpassen oder als Vorlage für eigene Rollen kopieren. Ein Update legt fehlende Rollen an,
+verändert aber keine bestehenden.
+
+**Module** bestimmen, was es in der Firma überhaupt gibt. Unter *Administration → Module* schaltet der Administrator Bereiche aus, die nicht
+gebraucht werden: Offerten, Aufträge, Rechnungen, Debitoren, Artikel und Lager, Einkauf, Kreditoren, Projekte und Zeiterfassung,
+Finanzbuchhaltung, Lohn, Auswertungen. Ein ausgeschaltetes Modul verschwindet für alle aus dem Menü – auch für Administratoren – und
+ist serverseitig gesperrt; die Daten bleiben erhalten, und das Modul lässt sich jederzeit wieder einschalten. Kunden/Lieferanten und die
+Administration sind immer aktiv.
 
 ## Erste Schritte nach der Installation
 
 1. Anmelden und das Initialpasswort ändern (Schlüssel-Symbol oben rechts).
 2. *Administration → Firma & Nummern*: Firmendaten, Bankverbindung, MwSt-Nr., Nummernkreise.
 3. *Administration → Beleglayout*: Logo hochladen, Vorlage und Texte wählen.
-4. *Administration → Benutzer / Rollen & Rechte*: Mitarbeitende anlegen.
+4. *Administration → Module*: nicht benötigte Bereiche ausschalten. *Administration → Benutzer / Rollen & Rechte*: Mitarbeitende anlegen.
 5. Kunden, Lieferanten und Artikel erfassen; Anfangsbestände als Wareneingang buchen.
    Mahnstufen unter *Debitoren → Mahnwesen* und die MwSt-Methode in den Firmendaten prüfen.
 6. Eröffnungssalden (z.B. Bankguthaben, Eigenkapital) als manuelle Buchung im Journal erfassen.
 
-## Bekannte Grenzen (Stand 1.4)
+## Bekannte Grenzen (Stand 1.5)
 
 - **Lohn:** Monatslohnabrechnung ohne Quellensteuer, Kinderzulagen, Stundenlöhne und Lohnmeldung (ELM)
 - **Lohnausweis:** dem Formular 11 nachgebildet, aber nicht das amtliche Formular mit Barcode; Gehaltsnebenleistungen (Ziffer 2), Pauschalspesen und Einkäufe in die Pensionskasse werden nicht geführt. Vor dem ersten Versand durch den Treuhänder prüfen lassen
@@ -366,10 +399,10 @@ docker compose -f docker-compose.test.yml down -v
 ```
 
 Die Suite startet eine frische Wegwerf-Datenbank, die Anwendung und einen Mail-Fänger und prüft über die API alle Geschäftsabläufe:
-Anmeldung, Rollenrechte, Zwei-Faktor-Anmeldung mit Wiederherstellungscodes, Belegfluss, Teillieferung, Gutschriften samt Storno, Mahnwesen mit
+Anmeldung, Rollenrechte, Module, Zwei-Faktor-Anmeldung mit Wiederherstellungscodes, Belegfluss, Teillieferung, Gutschriften samt Storno, Mahnwesen mit
 Verzugszins und Sammelmahnung, Zahlungsabgleich, Zahlungsdateien, Abo-Rechnungen, Fremdwährungen und Kurshistorie, Bestellwesen, Lagerorte,
 Chargen, Inventur, Projekte und Zeiterfassung, Kontakte, Bankabstimmung, Journal-Export, Lohn, Blättern in grossen Listen, PDF, E-Mail-Versand
-und den Jahresabschluss. Dazu kommen Unit-Tests der Rechenlogik und der Überwachung (77 Tests). Nach jeder Buchung wird geprüft, dass die Bilanz ausgeglichen ist.
+und den Jahresabschluss. Dazu kommen Unit-Tests der Rechenlogik und der Überwachung (81 Tests). Nach jeder Buchung wird geprüft, dass die Bilanz ausgeglichen ist.
 
 Die Oberfläche selbst (Klickwege im Browser) ist nicht automatisiert getestet.
 

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { q, one, tx } from '../db.js';
-import { can, audit, PERMISSIONS } from '../auth.js';
+import { can, audit, PERMISSIONS, MODULES, effectivePermissions } from '../auth.js';
 import { HttpError, h } from '../util.js';
 import { validatePassword } from './auth.js';
 import { getSettings, saveSetting, getLogo, SETTING_KEYS, DEFAULTS } from '../services/settings.js';
@@ -78,12 +78,17 @@ r.delete('/users/:id', can('admin.users'), h(async (req, res) => {
 }));
 
 // ---------- Rollen ----------
-r.get('/permissions', can('admin.users'), (_req, res) => res.json(PERMISSIONS));
+/** Katalog für die Rollenverwaltung und die Modulseite: Rechte mit Beschreibung, Module mit ihren Menüpunkten. */
+r.get('/permissions', can('admin.users', 'admin.settings'), (_req, res) => res.json({ permissions: PERMISSIONS, modules: MODULES }));
 
 r.get('/roles', can('admin.users'), h(async (_req, res) => {
   const roles = await q('SELECT r.*, (SELECT COUNT(*) FROM users u WHERE u.role_id = r.id) AS user_count FROM roles r ORDER BY r.is_system DESC, r.name');
   const perms = await q('SELECT role_id, permission FROM role_permissions');
-  for (const role of roles) role.permissions = perms.filter((p) => p.role_id === role.id).map((p) => p.permission);
+  for (const role of roles) {
+    role.permissions = perms.filter((p) => p.role_id === role.id).map((p) => p.permission);
+    // Was die Rolle tatsächlich darf: inklusive eingeschlossener Rechte, ohne Rücksicht auf ausgeschaltete Module
+    role.effective = effectivePermissions(role.permissions);
+  }
   res.json(roles);
 }));
 
@@ -153,6 +158,7 @@ r.put('/settings/:key', can('admin.settings'), h(async (req, res) => {
   if (key === 'mail' && !value.password) delete value.password; // leeres Feld = Passwort unverändert lassen
   if (key === 'mail' && req.body?.clearPassword) value.password = '';
   if (key === 'company' && value.currency) value.currency = String(value.currency).toUpperCase().slice(0, 3);
+  if (key === 'modules') for (const k of Object.keys(value)) value[k] = value[k] !== false && value[k] !== 0 && value[k] !== 'false';
   await saveSetting(key, { ...current, ...value });
   await audit(req, 'update', 'settings', key);
   const saved = (await getSettings())[key];

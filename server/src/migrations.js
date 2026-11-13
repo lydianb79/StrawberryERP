@@ -287,6 +287,50 @@ export const MIGRATIONS = [
       `ALTER TABLE payslips ADD COLUMN thirteenth DECIMAL(14,2) NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    version: 6,
+    name: '1.5: zusätzliche vordefinierte Rollen',
+    statements: [],
+    // Neue Rollen nur anlegen, wenn es noch keine mit diesem Namen gibt – bestehende, angepasste Rollen bleiben unberührt.
+    run: async () => {
+      for (const role of EXTRA_ROLES) {
+        if (await one('SELECT id FROM roles WHERE name = ?', [role.name])) continue;
+        const res = await q('INSERT INTO roles (name, description) VALUES (?, ?)', [role.name, role.description]);
+        await q('INSERT INTO role_permissions (role_id, permission) VALUES ?', [role.permissions.map((p) => [res.insertId, p])]);
+      }
+      // Beschreibungen der bisherigen Standardrollen präzisieren, sofern sie nicht geändert wurden
+      for (const [name, before, after] of ROLE_TEXTS) await q('UPDATE roles SET description = ? WHERE name = ? AND description = ?', [after, name, before]);
+    },
+  },
+];
+
+const ROLE_TEXTS = [
+  ['Buchhaltung', 'Rechnungen, Debitoren/Kreditoren, Buchhaltung, Abschluss', 'Ganze Finanzseite: Rechnungen, Debitoren, Kreditoren, Buchhaltung, Jahresabschluss, Auswertungen – ohne Lohn'],
+  ['Verkauf', 'Kunden, Offerten, Aufträge, Rechnungen', 'Sachbearbeitung Verkauf: Kunden, Offerten, Aufträge, Rechnungen, Projekte – ohne Zahlungen und Buchhaltung'],
+  ['Lager', 'Artikel und Lagerbewegungen', 'Artikel, Lagerbewegungen, Inventur und Wareneingänge aus Bestellungen'],
+  ['Nur Lesen', 'Lesezugriff auf alle Bereiche', 'Alles ansehen, nichts ändern – ohne Lohn und Administration'],
+];
+
+export const EXTRA_ROLES = [
+  { name: 'Geschäftsleitung', description: 'Sieht alles inklusive Lohn und Auswertungen, ändert aber nichts – für Inhaber und Geschäftsführung',
+    permissions: ['customers.read', 'suppliers.read', 'quotes.read', 'orders.read', 'invoices.read', 'receivables.read', 'inventory.read', 'purchasing.read',
+      'payables.read', 'projects.read', 'accounting.read', 'payroll.read', 'reports.read'] },
+  { name: 'Verkaufsleitung', description: 'Verkauf mit Auswertungen, Mahnwesen und Projektabrechnung',
+    permissions: ['customers.write', 'quotes.write', 'orders.write', 'invoices.write', 'receivables.write', 'inventory.read', 'projects.write', 'reports.read'] },
+  { name: 'Einkauf', description: 'Lieferanten, Bestellungen und Wareneingang; sieht Lager und Kreditoren',
+    permissions: ['suppliers.write', 'purchasing.write', 'inventory.read', 'payables.read'] },
+  { name: 'Debitorenbuchhaltung', description: 'Zahlungseingänge, Mahnwesen und Zahlungsabgleich; sieht Kunden und Rechnungen',
+    permissions: ['customers.read', 'invoices.read', 'receivables.write', 'banking.import', 'reports.read'] },
+  { name: 'Kreditorenbuchhaltung', description: 'Lieferantenrechnungen, Zahlungen und Zahlungsdateien; pflegt Lieferanten',
+    permissions: ['suppliers.write', 'payables.write', 'purchasing.read'] },
+  { name: 'Personal', description: 'Lohnabrechnung: Mitarbeitende, Lohnläufe, Lohnausweise – sonst nichts',
+    permissions: ['payroll.write'] },
+  { name: 'Projektleitung', description: 'Projekte führen, Zeiten aller Personen sehen und offene Stunden verrechnen',
+    permissions: ['customers.read', 'projects.write', 'quotes.read', 'invoices.write'] },
+  { name: 'Zeiterfassung', description: 'Nur eigene Arbeitszeit auf Projekte buchen – für Mitarbeitende ohne weitere Aufgaben im System',
+    permissions: ['time.write'] },
+  { name: 'Treuhand', description: 'Externer Lesezugriff auf Buchhaltung, offene Posten, Rechnungen und Auswertungen inklusive Journal-Export',
+    permissions: ['accounting.read', 'invoices.read', 'receivables.read', 'payables.read', 'reports.read'] },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 1;
@@ -312,6 +356,7 @@ export async function runMigrations() {
         }
       }
     }
+    if (m.run) await m.run();
     await q('INSERT INTO schema_migrations (version, name) VALUES (?, ?)', [m.version, m.name]);
   }
   return (await one('SELECT MAX(version) AS v FROM schema_migrations')).v;

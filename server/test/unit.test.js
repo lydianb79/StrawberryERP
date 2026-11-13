@@ -119,7 +119,7 @@ test('PDF-Erzeugung ohne Datenbank (alle Vorlagen, mit Zahlteil)', async () => {
 
 test('Migrationen sind lückenlos und aufsteigend nummeriert', () => {
   assert.deepEqual(MIGRATIONS.map((m) => m.version), MIGRATIONS.map((_, i) => i + 2));
-  for (const m of MIGRATIONS) assert.ok(m.name && m.statements.length > 0);
+  for (const m of MIGRATIONS) assert.ok(m.name && (m.statements.length > 0 || typeof m.run === 'function'));
 });
 
 test('Überwachung: Statuswechsel lösen Meldungen aus, Dauerstörungen nur einmal täglich', async () => {

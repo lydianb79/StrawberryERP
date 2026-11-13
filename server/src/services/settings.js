@@ -93,6 +93,11 @@ export const DEFAULTS = {
         text: 'Leider haben wir auf unsere bisherigen Schreiben keine Zahlung erhalten. Wir fordern Sie letztmals auf, den Gesamtbetrag bis {frist} zu begleichen. Andernfalls sehen wir uns gezwungen, rechtliche Schritte einzuleiten.' },
     ],
   },
+  // Ein-/Ausschalten der Module (Administration → Module). Fehlt ein Eintrag, ist das Modul eingeschaltet.
+  modules: {
+    quotes: true, orders: true, invoicing: true, receivables: true, inventory: true, purchasing: true, payables: true,
+    projects: true, accounting: true, payroll: true, reports: true,
+  },
   payroll: {
     // Sätze in Prozent des Bruttolohns – bitte mit den Verfügungen der Ausgleichskasse und der Versicherer abgleichen.
     employee: [

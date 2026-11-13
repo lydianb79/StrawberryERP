@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, fmtDate, fmtDateTime } from '../lib.js';
 import { useAuth } from '../auth.js';
-import { AutoField, DataTable, Field, Icon, Modal, PageHead, useToast } from '../components/ui.jsx';
+import { AutoField, DataTable, Field, Icon, Modal, PageHead, Tabs, useToast } from '../components/ui.jsx';
 
 // ---------- Benutzer ----------
 export function Users() {
@@ -56,6 +56,9 @@ export function Users() {
               <AutoField field={{ label: 'Rolle', type: 'select', required: true, options: roles.map((r) => ({ value: r.id, label: r.name })) }} value={editing.role_id} onChange={set('role_id')} />
               <AutoField field={{ label: editing.id ? 'Neues Passwort' : 'Passwort', type: 'password', required: !editing.id, hint: editing.id ? 'Leer lassen = unverändert' : 'Mindestens 10 Zeichen' }} value={editing.password} onChange={set('password')} />
               <AutoField field={{ label: 'Konto aktiv', type: 'checkbox' }} value={editing.active} onChange={set('active')} />
+              {roles.find((r) => String(r.id) === String(editing.role_id))?.description && (
+                <div className="alert info span-all"><b>{roles.find((r) => String(r.id) === String(editing.role_id)).name}:</b> {roles.find((r) => String(r.id) === String(editing.role_id)).description}. Details unter «Rollen &amp; Rechte → Übersicht».</div>
+              )}
               {!!editing.totp_enabled && <AutoField field={{ label: 'Zwei-Faktor-Anmeldung zurücksetzen (Gerät verloren)', type: 'checkbox', span: 'all' }} value={editing.reset2fa} onChange={set('reset2fa')} />}
             </div>
             <div className="row" style={{ marginTop: 20 }}>
@@ -72,17 +75,77 @@ export function Users() {
 }
 
 // ---------- Rollen ----------
+/** Alle Rechte, die eine Auswahl tatsächlich gibt – inklusive der eingeschlossenen (bearbeiten → ansehen). */
+function withImplied(keys, catalog) {
+  const out = new Set();
+  const add = (k) => { const p = catalog.find((x) => x.key === k); if (!p || out.has(k)) return; out.add(k); p.implies.forEach(add); };
+  keys.forEach(add);
+  return out;
+}
+
+const groupsOf = (catalog) => [...new Set(catalog.map((p) => p.group))];
+
+/** Matrix: Zeilen = Rechte (nach Bereich), Spalten = Rollen. Zeigt auf einen Blick, welche Rolle was darf. */
+function PermissionMatrix({ roles, catalog, modules, enabled }) {
+  const moduleOf = (key) => modules.find((m) => m.key === key);
+  return (
+    <div className="card">
+      <div className="table-wrap" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+        <table className="table matrix">
+          <thead>
+            <tr>
+              <th style={{ minWidth: 300 }}>Berechtigung</th>
+              {roles.map((r) => <th key={r.id} className="rot" title={r.description || ''}><span>{r.name}</span></th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {groupsOf(catalog).map((g) => {
+              const perms = catalog.filter((p) => p.group === g);
+              const mod = moduleOf(perms[0].module);
+              const off = !mod.always && enabled[mod.key] === false;
+              return [
+                <tr key={`g${g}`} className="group-row"><td colSpan={roles.length + 1}>{g}{off && <span className="badge amber" style={{ marginLeft: 8 }}>Modul ausgeschaltet – Rechte wirken derzeit nicht</span>}</td></tr>,
+                ...perms.map((p) => (
+                  <tr key={p.key}>
+                    <td><b>{p.label}</b><div className="muted small">{p.description}</div></td>
+                    {roles.map((r) => {
+                      const direct = r.permissions.includes('*') || r.permissions.includes(p.key);
+                      const has = r.effective.includes(p.key);
+                      return <td key={r.id} className="tick" title={has ? (direct ? `${r.name}: erlaubt` : `${r.name}: erlaubt (in einem umfassenderen Recht enthalten)`) : `${r.name}: nicht erlaubt`}>
+                        {has ? <span className={direct ? 'yes' : 'yes implied'}>✓</span> : <span className="no">·</span>}</td>;
+                    })}
+                  </tr>
+                )),
+              ];
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="card-body muted small">✓ = erlaubt. Ein blasses ✓ bedeutet: nicht einzeln angekreuzt, aber in einem umfassenderen Recht enthalten (wer bearbeiten darf, darf auch ansehen). Der Administrator hat immer alle Rechte.</div>
+    </div>
+  );
+}
+
 export function Roles() {
   const toast = useToast();
+  const { settings } = useAuth();
   const [roles, setRoles] = useState(null);
-  const [perms, setPerms] = useState([]);
+  const [catalog, setCatalog] = useState([]);
+  const [modules, setModules] = useState([]);
   const [editing, setEditing] = useState(null);
+  const [tab, setTab] = useState('roles');
+  const enabled = settings?.modules || {};
 
   const load = useCallback(() => api('/roles').then(setRoles).catch((e) => { setRoles([]); toast.error(e.message); }), [toast]);
-  useEffect(() => { load(); api('/permissions').then(setPerms).catch(() => {}); }, [load]);
+  useEffect(() => { load(); api('/permissions').then((c) => { setCatalog(c.permissions); setModules(c.modules); }).catch(() => {}); }, [load]);
 
-  const groups = [...new Set(perms.map((p) => p.group))];
+  // Ankreuzen schliesst ein, was dazugehört; ein eingeschlossenes Recht lässt sich nicht einzeln abwählen
+  const chosen = editing ? withImplied(editing.permissions, catalog) : new Set();
   const toggle = (key) => setEditing((cur) => ({ ...cur, permissions: cur.permissions.includes(key) ? cur.permissions.filter((p) => p !== key) : [...cur.permissions, key] }));
+  const setGroup = (g, on) => setEditing((cur) => {
+    const keys = catalog.filter((p) => p.group === g).map((p) => p.key);
+    return { ...cur, permissions: on ? [...new Set([...cur.permissions, ...keys])] : cur.permissions.filter((p) => !keys.includes(p)) };
+  });
   const save = async (e) => {
     e.preventDefault();
     try {
@@ -97,42 +160,65 @@ export function Roles() {
     if (!window.confirm(`Rolle «${editing.name}» löschen?`)) return;
     try { await api(`/roles/${editing.id}`, { method: 'DELETE' }); toast('Rolle gelöscht.'); setEditing(null); load(); } catch (err) { toast.error(err.message); }
   };
+  const areas = (r) => (r.permissions.includes('*') ? 'alle Bereiche' : groupsOf(catalog).filter((g) => catalog.some((p) => p.group === g && r.effective.includes(p.key))).join(', ') || '–');
 
   return (
     <>
-      <PageHead title="Rollen & Rechte" subtitle="Rollenbasierte Zugriffssteuerung: Jede Rolle bündelt Berechtigungen pro Modul">
+      <PageHead title="Rollen & Rechte" subtitle="Jede Person hat genau eine Rolle; die Rolle bestimmt, was sie sehen und tun darf">
         <button className="btn primary" onClick={() => setEditing({ name: '', description: '', permissions: [] })}><Icon name="plus" /> Neue Rolle</button>
       </PageHead>
-      <DataTable searchable={false} rows={roles} onRowClick={(r) => setEditing({ ...r })} columns={[
-        { key: 'name', label: 'Rolle', render: (r) => <b>{r.name}</b> },
-        { key: 'description', label: 'Beschreibung' },
-        { key: 'permissions', label: 'Berechtigungen', render: (r) => (r.permissions.includes('*') ? <span className="badge red">Vollzugriff</span> : `${r.permissions.length} von ${perms.length}`) },
-        { key: 'user_count', label: 'Benutzer', num: true },
-      ]} />
+      <Tabs value={tab} onChange={setTab} tabs={[['roles', 'Rollen'], ['matrix', 'Übersicht: Wer darf was?']]} />
+      {tab === 'matrix' && roles && <PermissionMatrix roles={roles} catalog={catalog} modules={modules} enabled={enabled} />}
+      {tab === 'roles' && (
+        <DataTable searchable={false} rows={roles} onRowClick={(r) => setEditing({ ...r })} columns={[
+          { key: 'name', label: 'Rolle', render: (r) => <b className="nowrap">{r.name}</b> },
+          { key: 'description', label: 'Wofür' },
+          { key: 'areas', label: 'Zugriff auf', render: (r) => <span className="small">{areas(r)}</span> },
+          { key: 'permissions', label: 'Rechte', num: true, render: (r) => (r.permissions.includes('*') ? <span className="badge red">Vollzugriff</span> : `${r.effective.length} von ${catalog.length}`) },
+          { key: 'user_count', label: 'Benutzer', num: true },
+        ]} />
+      )}
       {editing && (
         <Modal title={editing.id ? `Rolle: ${editing.name}` : 'Neue Rolle'} onClose={() => setEditing(null)} wide>
           <form onSubmit={save}>
-            {editing.is_system ? <div className="alert info" style={{ marginBottom: 14 }}>Die Systemrolle «Administrator» hat immer Vollzugriff und kann nicht geändert werden.</div> : null}
+            {editing.is_system ? <div className="alert info" style={{ marginBottom: 14 }}>Die Systemrolle «Administrator» hat immer alle Rechte und kann nicht geändert werden.</div> : null}
             <div className="form-grid">
               <Field label="Name *"><input className="input" required disabled={!!editing.is_system} value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></Field>
-              <Field label="Beschreibung"><input className="input" disabled={!!editing.is_system} value={editing.description || ''} onChange={(e) => setEditing({ ...editing, description: e.target.value })} /></Field>
+              <Field label="Wofür ist die Rolle gedacht?"><input className="input" disabled={!!editing.is_system} value={editing.description || ''} onChange={(e) => setEditing({ ...editing, description: e.target.value })} /></Field>
             </div>
             {!editing.is_system && (
-              <div className="perm-grid" style={{ marginTop: 18 }}>
-                {groups.map((g) => (
-                  <div key={g}>
-                    <h3>{g}</h3>
-                    {perms.filter((p) => p.group === g).map((p) => (
-                      <label className="check" key={p.key} style={{ padding: '3px 0' }}>
-                        <input type="checkbox" checked={editing.permissions.includes(p.key)} onChange={() => toggle(p.key)} /> {p.label}
-                      </label>
-                    ))}
-                  </div>
-                ))}
+              <div className="stack" style={{ marginTop: 16, gap: 10 }}>
+                {groupsOf(catalog).map((g) => {
+                  const perms = catalog.filter((p) => p.group === g);
+                  const mod = modules.find((m) => m.key === perms[0].module);
+                  const off = mod && !mod.always && enabled[mod.key] === false;
+                  const all = perms.every((p) => chosen.has(p.key));
+                  return (
+                    <div key={g} className="perm-group">
+                      <div className="row">
+                        <h3>{g}</h3>
+                        {off && <span className="badge amber">Modul ausgeschaltet</span>}
+                        <div className="spacer" />
+                        <button type="button" className="btn sm ghost" onClick={() => setGroup(g, !all)}>{all ? 'Keine' : 'Alle'}</button>
+                      </div>
+                      {perms.map((p) => {
+                        const direct = editing.permissions.includes(p.key);
+                        const implied = !direct && chosen.has(p.key);
+                        return (
+                          <label className="check perm" key={p.key} title={implied ? 'In einem angekreuzten, umfassenderen Recht enthalten' : ''}>
+                            <input type="checkbox" checked={direct || implied} disabled={implied} onChange={() => toggle(p.key)} />
+                            <span><b>{p.label}</b>{implied && <span className="muted small"> (eingeschlossen)</span>}<span className="muted small" style={{ display: 'block', fontWeight: 400 }}>{p.description}</span></span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
               </div>
             )}
             <div className="row" style={{ marginTop: 20 }}>
               {editing.id && !editing.is_system && <button type="button" className="btn danger" onClick={remove}><Icon name="trash" /> Löschen</button>}
+              {editing.id && !editing.is_system && <button type="button" className="btn" onClick={() => setEditing({ name: `${editing.name} (Kopie)`, description: editing.description, permissions: [...editing.permissions] })}>Als Vorlage kopieren</button>}
               <div className="spacer" />
               <button type="button" className="btn" onClick={() => setEditing(null)}>{editing.is_system ? 'Schliessen' : 'Abbrechen'}</button>
               {!editing.is_system && <button className="btn primary">Speichern</button>}
@@ -140,6 +226,53 @@ export function Roles() {
           </form>
         </Modal>
       )}
+    </>
+  );
+}
+
+// ---------- Module ----------
+export function Modules() {
+  const { settings, reloadSettings, reloadUser } = useAuth();
+  const toast = useToast();
+  const [modules, setModules] = useState([]);
+  const [state, setState] = useState(null);
+  useEffect(() => { api('/permissions').then((c) => setModules(c.modules)).catch(() => {}); }, []);
+  useEffect(() => { if (settings?.modules && !state) setState({ ...settings.modules }); }, [settings, state]);
+  if (!state) return <div className="empty">Lädt…</div>;
+  const dirty = modules.some((m) => !m.always && (state[m.key] !== false) !== (settings.modules[m.key] !== false));
+  const save = async () => {
+    const off = modules.filter((m) => !m.always && state[m.key] === false).map((m) => m.label);
+    if (off.length && !window.confirm(`Diese Module ausschalten?\n\n${off.join(', ')}\n\nIhre Menüpunkte verschwinden für alle Benutzer, auch für Administratoren. Daten bleiben erhalten; die Module lassen sich jederzeit wieder einschalten.`)) return;
+    try {
+      await api('/settings/modules', { method: 'PUT', body: state });
+      await reloadSettings();
+      await reloadUser();
+      toast('Module gespeichert.');
+    } catch (err) { toast.error(err.message); }
+  };
+  return (
+    <>
+      <PageHead title="Module" subtitle="Legen Sie fest, welche Bereiche von StrawberryERP in Ihrer Firma verwendet werden">
+        <button className="btn primary" disabled={!dirty} onClick={save}><Icon name="check" /> Speichern</button>
+      </PageHead>
+      <div className="alert info" style={{ marginBottom: 16 }}>Ein ausgeschaltetes Modul ist für alle ausgeblendet und gesperrt – unabhängig von der Rolle. Vorhandene Daten bleiben unverändert erhalten. Welche Person innerhalb der eingeschalteten Module was darf, bestimmen die <b>Rollen</b>.</div>
+      <div className="module-grid">
+        {modules.map((m) => {
+          const on = m.always || state[m.key] !== false;
+          return (
+            <label key={m.key} className={`card module ${on ? 'on' : ''}`}>
+              <div className="row" style={{ flexWrap: 'nowrap', alignItems: 'flex-start' }}>
+                <input type="checkbox" checked={on} disabled={m.always} onChange={(e) => setState({ ...state, [m.key]: e.target.checked })} />
+                <div>
+                  <h3>{m.label} {m.always && <span className="badge">immer aktiv</span>}{!on && <span className="badge amber">ausgeschaltet</span>}</h3>
+                  <p className="muted" style={{ margin: '4px 0 6px' }}>{m.description}</p>
+                  <div className="muted small">Menü: {m.menu.join(' · ')}</div>
+                </div>
+              </div>
+            </label>
+          );
+        })}
+      </div>
     </>
   );
 }
