@@ -51,18 +51,27 @@ Auf CentOS funktioniert dasselbe mit Docker oder Podman (`dnf install podman pod
 
 ## Installation auf CentOS (nativ, ohne Docker)
 
-Voraussetzung: CentOS Stream 9 oder 10 (auch RHEL/Rocky/AlmaLinux), root-Zugriff, 2 GB RAM.
+Voraussetzung: CentOS Stream 9 oder 10 (auch RHEL/Rocky/AlmaLinux), root-Zugriff, 2 GB RAM, Internetzugang für Paketquellen und npm.
+Getestet auf CentOS Stream 10 (aarch64) mit Node.js 22.23 und MySQL 8.4; auf Stream 9 bisher nicht ausgeführt.
 
 ```bash
 sudo dnf -y install git
-git clone https://github.com/<konto>/StrawberryERP.git
+git clone https://github.com/lydianb79/StrawberryERP.git
 cd StrawberryERP
 sudo bash deploy/install-centos.sh
 ```
 
-Das Skript installiert Node.js 22, MySQL und nginx, legt Datenbank und DB-Benutzer mit Zufallspasswort an,
-baut das Frontend, richtet den systemd-Dienst `strawberryerp` und nginx als Reverse-Proxy (Port 80) ein
-und öffnet die Firewall. Die Konfiguration liegt in `/etc/strawberryerp.env`.
+Das Skript
+
+- installiert Node.js 22, MySQL 8 und nginx aus den Paketquellen der Distribution,
+- legt Datenbank und DB-Benutzer mit Zufallspasswort an; MySQL wird an `127.0.0.1` gebunden,
+- legt den **dedizierten Systembenutzer `strawberry`** an (ohne Login-Shell, Home `/opt/strawberryerp`) – der Server läuft unter diesem Benutzer, nicht als root,
+- baut das Frontend und installiert die Anwendung nach `/opt/strawberryerp`,
+- richtet den gehärteten systemd-Dienst `strawberryerp` ein (lauscht nur auf `127.0.0.1:3000`),
+- konfiguriert nginx als Reverse-Proxy auf Port 80 (inkl. SELinux-Freigabe) und öffnet HTTP/HTTPS in der Firewall.
+
+Die Konfiguration liegt in `/etc/strawberryerp.env` (nur für root lesbar). Die Datenbank startet leer, ohne Beispieldaten.
+Von aussen erreichbar sind danach nur nginx (80/443) und SSH.
 
 ```bash
 journalctl -u strawberryerp | grep Initialpasswort   # Passwort des ersten Administrators
@@ -75,7 +84,13 @@ journalctl -u strawberryerp -f                         # Log
 **HTTPS:** `dnf install certbot python3-certbot-nginx && certbot --nginx -d erp.ihre-domain.ch`,
 danach in `/etc/strawberryerp.env` `COOKIE_SECURE=true` setzen und `systemctl restart strawberryerp`.
 
-**Datensicherung:** `deploy/backup.sh` erstellt komprimierte `mysqldump`-Sicherungen (per Cron täglich ausführen).
+**Datensicherung:** `deploy/backup.sh` erstellt komprimierte `mysqldump`-Sicherungen nach `/var/backups/strawberryerp` und löscht Stände, die älter als 30 Tage sind. Einrichtung als täglicher Cron-Job:
+
+```bash
+sudo install -m 700 deploy/backup.sh /opt/strawberryerp-backup.sh
+echo '15 2 * * * root /opt/strawberryerp-backup.sh' | sudo tee /etc/cron.d/strawberryerp-backup
+```
+
 Mit Docker: `docker compose exec db sh -c 'mysqldump -ustrawberry -p"$MYSQL_PASSWORD" strawberryerp' | gzip > backup.sql.gz`
 
 ## Konfiguration (Umgebungsvariablen)
@@ -119,6 +134,15 @@ Der Lagerabgang wird beim Ausliefern des Auftrags gebucht – oder beim Buchen d
 - Jede API-Route prüft die Berechtigung der Rolle serverseitig
 - Ausschliesslich parametrisierte SQL-Abfragen; Security-Header via Helmet (CSP)
 - Alle Änderungen werden im Protokoll festgehalten
+
+## Erste Schritte nach der Installation
+
+1. Anmelden und das Initialpasswort ändern (Schlüssel-Symbol oben rechts).
+2. *Administration → Firma & Nummern*: Firmendaten, Bankverbindung, MwSt-Nr., Nummernkreise.
+3. *Administration → Beleglayout*: Logo hochladen, Vorlage und Texte wählen.
+4. *Administration → Benutzer / Rollen & Rechte*: Mitarbeitende anlegen.
+5. Kunden, Lieferanten und Artikel erfassen; Anfangsbestände als Wareneingang buchen.
+6. Eröffnungssalden (z.B. Bankguthaben, Eigenkapital) als manuelle Buchung im Journal erfassen.
 
 ## Bekannte Grenzen (Stand 1.0)
 
