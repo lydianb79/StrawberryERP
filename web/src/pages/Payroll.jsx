@@ -11,7 +11,7 @@ export function Employees() {
   const lookup = useLookup();
   return (
     <CrudPage title="Mitarbeitende" subtitle="Personalstamm für die Lohnabrechnung" endpoint="/employees" writePerm="payroll.write" newLabel="Neue Person"
-      defaults={{ active: true, monthly_gross: 0, bvg_employee: 0, bvg_employer: 0 }} exportName="mitarbeitende"
+      defaults={{ active: true, monthly_gross: 0, bvg_employee: 0, bvg_employer: 0, thirteenth: 'none' }} exportName="mitarbeitende"
       columns={[
         { key: 'number', label: 'Nr.' },
         { key: 'name', label: 'Name', render: (r) => <b>{r.name}</b> },
@@ -19,6 +19,7 @@ export function Employees() {
         { key: 'entry_date', label: 'Eintritt', render: (r) => fmtDate(r.entry_date) },
         { key: 'exit_date', label: 'Austritt', render: (r) => (r.exit_date ? fmtDate(r.exit_date) : '') },
         { key: 'monthly_gross', label: 'Monatslohn brutto', num: true, render: (r) => money(r.monthly_gross) },
+        { key: 'thirteenth', label: '13. Monatslohn', render: (r) => ({ none: '–', december: 'im Dezember', half: 'Juni / Dezember' }[r.thirteenth]) },
         { key: 'active', label: 'Status', render: (r) => (r.active ? <span className="badge green">Aktiv</span> : <span className="badge">Inaktiv</span>) },
       ]}
       fields={[
@@ -30,9 +31,14 @@ export function Employees() {
         { name: 'birth_date', label: 'Geburtsdatum', type: 'date' }, { name: 'iban', label: 'IBAN (Lohnkonto)' },
         { name: 'entry_date', label: 'Eintritt', type: 'date' }, { name: 'exit_date', label: 'Austritt', type: 'date' },
         { name: 'monthly_gross', label: 'Monatslohn brutto', type: 'number' },
+        { name: 'thirteenth', label: '13. Monatslohn', type: 'select', required: true, hint: 'Bei Ein- oder Austritt unter dem Jahr anteilig', options: [
+          { value: 'none', label: 'Kein 13. Monatslohn' }, { value: 'december', label: 'Auszahlung im Dezember' }, { value: 'half', label: 'Je zur Hälfte im Juni und Dezember' }] },
         { name: 'cost_center_id', label: 'Kostenstelle', type: 'select', options: (lookup?.costCenters || []).map((c) => ({ value: c.id, label: `${c.code} ${c.name}` })) },
         { name: 'bvg_employee', label: 'BVG Arbeitnehmer (Betrag/Monat)', type: 'number' },
         { name: 'bvg_employer', label: 'BVG Arbeitgeber (Betrag/Monat)', type: 'number' },
+        { name: 'free_transport', label: 'Lohnausweis F: unentgeltliche Beförderung zum Arbeitsort', type: 'checkbox', span: 2 },
+        { name: 'canteen', label: 'Lohnausweis G: Kantinenverpflegung / Lunch-Checks', type: 'checkbox', span: 2 },
+        { name: 'certificate_remarks', label: 'Lohnausweis Ziffer 15: Bemerkungen', span: 'all', placeholder: 'z.B. Spesenreglement durch Kanton ZH am … genehmigt' },
         { name: 'active', label: 'Aktiv', type: 'checkbox' },
       ]} />
   );
@@ -96,7 +102,8 @@ function RunModal({ id, onClose, onChanged }) {
     if (question && !window.confirm(question)) return;
     try { const r = await fn(); if (message) toast(message); if (r?.id) setRun(r); onChanged(); return r; } catch (err) { toast.error(err.message); return null; }
   };
-  const edit = (slip, patch) => act(() => api(`/payslips/${slip.id}`, { method: 'PUT', body: { bonus: slip.bonus, expenses: slip.expenses, ...patch } }));
+  const edit = (slip, patch) => act(() => api(`/payslips/${slip.id}`, { method: 'PUT', body: { bonus: slip.bonus, expenses: slip.expenses, thirteenth: slip.thirteenth, ...patch } }));
+  const has13 = run.slips.some((s) => s.thirteenth);
   const file = async () => {
     const f = await act(() => api(`/payroll/${id}/payment-file`, { method: 'POST', body: {} }));
     if (f?.xml) { saveText(f.filename, f.xml); toast(`Zahlungsdatei mit ${f.count} Löhnen erstellt (Total ${money(f.total)}).`); }
@@ -123,13 +130,14 @@ function RunModal({ id, onClose, onChanged }) {
       <div className="row" style={{ marginBottom: 10 }}><span className={`badge ${color}`}>{label}</span><span className="muted">Buchungsdatum {fmtDate(run.date)}</span></div>
       <div className="table-wrap">
         <table className="table">
-          <thead><tr><th>Person</th><th className="num">Monatslohn</th><th className="num" style={{ width: 110 }}>Zulage</th><th className="num">Abzüge</th>
+          <thead><tr><th>Person</th><th className="num">Monatslohn</th>{has13 && <th className="num" style={{ width: 110 }}>13. Monatslohn</th>}<th className="num" style={{ width: 110 }}>Zulage</th><th className="num">Abzüge</th>
             <th className="num" style={{ width: 110 }}>Spesen</th><th className="num">Auszahlung</th><th className="num">Arbeitgeber</th><th /></tr></thead>
           <tbody>
             {run.slips.map((s) => (
               <tr key={s.id}>
                 <td><b>{s.name}</b><div className="muted small">{s.number}{!s.iban && ' · keine IBAN'}</div></td>
                 <td className="num">{money(s.base)}</td>
+                {has13 && <td>{run.status === 'draft' && writable ? <input className="input num" type="number" step="0.05" min="0" defaultValue={s.thirteenth} onBlur={(e) => Number(e.target.value) !== s.thirteenth && edit(s, { thirteenth: e.target.value })} /> : <span className="num" style={{ display: 'block' }}>{money(s.thirteenth)}</span>}</td>}
                 <td>{run.status === 'draft' && writable ? <input className="input num" type="number" step="0.05" defaultValue={s.bonus} onBlur={(e) => Number(e.target.value) !== s.bonus && edit(s, { bonus: e.target.value })} /> : <span className="num" style={{ display: 'block' }}>{money(s.bonus)}</span>}</td>
                 <td className="num" title={s.deductions.map((d) => `${d.label}: ${money(d.amount)}`).join('\n')}>− {money(s.deduction_total)}</td>
                 <td>{run.status === 'draft' && writable ? <input className="input num" type="number" step="0.05" defaultValue={s.expenses} onBlur={(e) => Number(e.target.value) !== s.expenses && edit(s, { expenses: e.target.value })} /> : <span className="num" style={{ display: 'block' }}>{money(s.expenses)}</span>}</td>
@@ -139,11 +147,46 @@ function RunModal({ id, onClose, onChanged }) {
               </tr>
             ))}
           </tbody>
-          <tfoot><tr><td>Total ({run.slips.length})</td><td className="num">{money(run.totals.gross)}</td><td /><td className="num">− {money(run.totals.deductions)}</td>
+          <tfoot><tr><td>Total ({run.slips.length})</td><td className="num" colSpan={has13 ? 2 : 1}>{money(run.totals.gross)}</td><td /><td className="num">− {money(run.totals.deductions)}</td>
             <td className="num">{money(run.totals.expenses)}</td><td className="num">{money(run.totals.net)}</td><td className="num">{money(run.totals.employer)}</td><td /></tr></tfoot>
         </table>
       </div>
-      <p className="muted small" style={{ marginBottom: 0 }}>Zulage und Spesen lassen sich im Entwurf anpassen; die Abzüge werden neu gerechnet. Die einzelnen Abzüge zeigt der Mauszeiger über dem Betrag.</p>
+      <p className="muted small" style={{ marginBottom: 0 }}>13. Monatslohn, Zulage und Spesen lassen sich im Entwurf anpassen; die Abzüge werden neu gerechnet. Die einzelnen Abzüge zeigt der Mauszeiger über dem Betrag.</p>
+    </Modal>
+  );
+}
+
+/** Lohnausweise eines Jahres: Jahreswerte je Person aus den gebuchten Lohnläufen, PDF nach Formular 11. */
+function CertificatesModal({ onClose }) {
+  const toast = useToast();
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [data, setData] = useState(null);
+  useEffect(() => { setData(null); api(`/payroll-certificates/${year}`).then(setData).catch((e) => { setData({ rows: [], draftRuns: [], runs: 0 }); toast.error(e.message); }); }, [year, toast]);
+  return (
+    <Modal title="Lohnausweise" onClose={onClose} wide>
+      <div className="row" style={{ marginBottom: 12 }}>
+        <span className="muted">Kalenderjahr</span>
+        <input className="input num" style={{ width: 110 }} type="number" min="2000" max="2100" value={year} onChange={(e) => setYear(e.target.value)} />
+        <span className="muted small">{data ? `${data.runs} Lohnläufe im Jahr` : ''}</span>
+      </div>
+      {data?.draftRuns?.length > 0 && <div className="alert" style={{ marginBottom: 12 }}>Noch nicht gebucht und deshalb nicht enthalten: {data.draftRuns.join(', ')}.</div>}
+      <div className="alert info" style={{ marginBottom: 12 }}>Der Lohnausweis ist ein Steuerdokument. Bitte Inhalt und Darstellung vor dem ersten Versand durch Ihren Treuhänder prüfen lassen. Gehaltsnebenleistungen (Ziffer 2), Quellensteuer (Ziffer 12) und Pauschalspesen werden nicht geführt und bleiben leer.</div>
+      {!data ? <div className="empty">Lädt…</div> : (
+        <div className="table-wrap"><table className="table items-table">
+          <thead><tr><th>Person</th><th className="num">1 Lohn</th><th className="num">3 Zulagen</th><th className="num">8 Brutto</th><th className="num">9 AHV/ALV</th><th className="num">10 BVG</th><th className="num">11 Netto</th><th className="num">13 Spesen</th><th /></tr></thead>
+          <tbody>
+            {data.rows.map((r) => (
+              <tr key={r.employee.id}>
+                <td><b>{r.employee.name}</b><div className="muted small">{r.employee.number} · {fmtDate(r.from)} – {fmtDate(r.to)} · {r.months.length} Lohnläufe{!r.employee.ahv_no && ' · AHV-Nr. fehlt'}</div></td>
+                <td className="num">{money(r.z1)}</td><td className="num">{money(r.z3)}</td><td className="num"><b>{money(r.z8)}</b></td>
+                <td className="num">{money(r.z9)}</td><td className="num">{money(r.z10)}</td><td className="num"><b>{money(r.z11)}</b></td><td className="num">{money(r.z13)}</td>
+                <td className="actions"><a className="btn sm" href={`/api/payroll-certificates/${year}/${r.employee.id}/pdf`} target="_blank" rel="noreferrer"><Icon name="pdf" /> PDF</a></td>
+              </tr>
+            ))}
+            {!data.rows.length && <tr><td colSpan={9} className="muted">Für dieses Jahr gibt es keine gebuchten Lohnläufe.</td></tr>}
+          </tbody>
+        </table></div>
+      )}
     </Modal>
   );
 }
@@ -154,6 +197,7 @@ export function PayrollRuns() {
   const [rows, setRows] = useState(null);
   const [openId, setOpenId] = useState(null);
   const [rates, setRates] = useState(false);
+  const [certs, setCerts] = useState(false);
   const now = new Date();
   const [period, setPeriod] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
   const writable = can('payroll.write');
@@ -165,11 +209,12 @@ export function PayrollRuns() {
   return (
     <>
       <PageHead title="Lohnläufe" subtitle="Monatliche Lohnabrechnung: rechnen, kontrollieren, buchen und auszahlen">
+        <button className="btn" onClick={() => setCerts(true)}><Icon name="file" /> Lohnausweise</button>
         {can('admin.settings') && <button className="btn" onClick={() => setRates(true)}>Lohnsätze</button>}
         {writable && <><input className="input" style={{ width: 150 }} type="month" value={period} onChange={(e) => setPeriod(e.target.value)} />
           <button className="btn primary" onClick={create}><Icon name="plus" /> Lohnlauf erstellen</button></>}
       </PageHead>
-      <div className="alert info" style={{ marginBottom: 16 }}>Einfache Lohnabrechnung für Monatslöhne mit prozentualen Abzügen. Nicht enthalten sind Quellensteuer, Lohnausweis, 13. Monatslohn, Kinderzulagen und Stundenlöhne.</div>
+      <div className="alert info" style={{ marginBottom: 16 }}>Lohnabrechnung für Monatslöhne mit prozentualen Abzügen, 13. Monatslohn und Lohnausweis. Nicht enthalten sind Quellensteuer, Kinderzulagen, Stundenlöhne und die elektronische Lohnmeldung.</div>
       <DataTable searchable={false} rows={rows} onRowClick={(r) => setOpenId(r.id)} empty="Noch kein Lohnlauf erstellt." columns={[
         { key: 'period', label: 'Monat', render: (r) => <b>{periodLabel(r.period)}</b> },
         { key: 'employees', label: 'Personen', num: true },
@@ -180,6 +225,7 @@ export function PayrollRuns() {
       ]} />
       {openId && <RunModal id={openId} onClose={() => { setOpenId(null); load(); }} onChanged={load} />}
       {rates && <RatesModal onClose={() => setRates(false)} />}
+      {certs && <CertificatesModal onClose={() => setCerts(false)} />}
     </>
   );
 }

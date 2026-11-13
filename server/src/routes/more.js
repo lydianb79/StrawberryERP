@@ -18,6 +18,8 @@ import { nextNumber } from '../services/numbering.js';
 import { renderDocumentPdf } from '../services/pdf.js';
 import { sendMail, fillTemplate, isMailConfigured } from '../services/mail.js';
 import { parseCamtBalance } from '../services/banking.js';
+import { renderLohnausweis } from '../services/lohnausweis.js';
+import { getLogo } from '../services/settings.js';
 
 const r = Router();
 
@@ -375,9 +377,11 @@ r.get('/journal-export', can('accounting.read'), h(async (req, res) => {
 r.use('/employees', crudRouter({
   table: 'employees', entity: 'employee', perm: 'payroll',
   fields: { number: 's', name: 's', street: 's', zip: 's', city: 's', ahv_no: 's', birth_date: 's', entry_date: 's', exit_date: 's',
-    monthly_gross: 'n', bvg_employee: 'n', bvg_employer: 'n', iban: 's', cost_center_id: 'i', active: 'b' },
+    monthly_gross: 'n', bvg_employee: 'n', bvg_employer: 'n', iban: 's', cost_center_id: 'i', active: 'b',
+    thirteenth: 's', free_transport: 'b', canteen: 'b', certificate_remarks: 's' },
   required: ['name'], search: ['number', 'name'], orderBy: 'name',
   autoNumber: { field: 'number', generate: async (conn) => `M-${String(await nextNumber(conn, 'employee', 0)).padStart(3, '0')}` },
+  validate: (d) => { if (d.thirteenth !== undefined && !['none', 'december', 'half'].includes(d.thirteenth)) d.thirteenth = 'none'; },
 }));
 
 r.get('/payroll', can('payroll.read'), h(async (_req, res) => res.json(await payroll.listRuns())));
@@ -423,6 +427,20 @@ r.post('/payroll/:id/payment-file', can('payroll.write'), h(async (req, res) => 
   }), { date: isDate(req.body?.date) ? req.body.date : today(), salary: true });
   await audit(req, 'payment-file', 'payroll', run.id, `${file.count} Löhne, Total ${file.total.toFixed(2)}`);
   res.json({ ...file, filename: `Loehne-${run.period}.xml` });
+}));
+
+// ---------- Lohnausweise ----------
+r.get('/payroll-certificates/:year', can('payroll.read'), h(async (req, res) => res.json(await payroll.certificates(undefined, req.params.year))));
+
+r.get('/payroll-certificates/:year/:employeeId/pdf', can('payroll.read'), h(async (req, res) => {
+  const { rows } = await payroll.certificates(undefined, req.params.year);
+  const data = rows.find((x) => x.employee.id === Number(req.params.employeeId));
+  if (!data) throw new HttpError(404, 'Für diese Person gibt es in diesem Jahr keine gebuchten Lohnläufe.');
+  const { company } = await getSettings();
+  await audit(req, 'lohnausweis', 'employee', data.employee.id, String(data.year));
+  res.set('Content-Type', 'application/pdf')
+    .set('Content-Disposition', `inline; filename="Lohnausweis-${data.year}-${data.employee.number}.pdf"`);
+  renderLohnausweis({ data, company, logo: await getLogo() }, res);
 }));
 
 // ---------- Kurshistorie ----------

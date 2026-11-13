@@ -11,7 +11,7 @@ Ausgelegt auf Schweizer Verhältnisse (CHF, MwSt-Sätze, Kontenrahmen KMU), Ober
 | **Lagerverwaltung** | Artikelstamm (Lagerartikel und Dienstleistungen), mehrere Lagerorte mit Umlagerung, Chargen und Seriennummern (FIFO-Entnahme, Rückverfolgung), geführte Inventur, Bewertung nach letztem Einstandspreis oder gleitendem Durchschnitt, Mindestbestand, lückenloses Bewegungsprotokoll |
 | **Projekte und Zeiterfassung** | Projekte mit Stundensatz und Budget, Arbeitszeit erfassen, offene Stunden in einen Rechnungsentwurf übernehmen |
 | **Kontakte** | Mehrere Ansprechpersonen pro Kunde und Lieferant, Notizen und Aufgaben zu Kunden und Belegen, eigene Aufgaben auf dem Dashboard |
-| **Lohn** | Mitarbeitende, monatlicher Lohnlauf mit einstellbaren Abzugssätzen, Lohnabrechnung als PDF, Verbuchung, Zahlungsdatei für die Auszahlung |
+| **Lohn** | Mitarbeitende, monatlicher Lohnlauf mit einstellbaren Abzugssätzen, 13. Monatslohn (anteilig bei Ein- und Austritt), Lohnabrechnung als PDF, Verbuchung, Zahlungsdatei für die Auszahlung, Lohnausweis pro Jahr |
 | **Offerten** | Erstellen, PDF, Status (Entwurf → Gesendet → Akzeptiert/Abgelehnt), Umwandlung in Auftrag oder Rechnung |
 | **Auftragsverwaltung** | Auftragsbestätigung als PDF, Teillieferungen mit Lagerabgang, Teilrechnungen, Storno |
 | **Rechnungsstellung** | Entwurf → Buchen (fortlaufende Nummer, Debitorenbuchung, Lagerabgang), Teil-/Vollzahlung, Storno mit Gegenbuchung |
@@ -292,9 +292,18 @@ Die Bewertungsmethode (letzter Einstandspreis oder gleitender Durchschnitt) wird
 **Projekte:** Zeiten werden mit dem Stundensatz des Projekts erfasst. «Abrechnen» übernimmt alle offenen, verrechenbaren Stunden in einen
 Rechnungsentwurf; wird der Entwurf gelöscht, sind die Stunden wieder offen.
 
-**Lohn** (*Lohn → Lohnläufe*): Ein Lauf rechnet je Person Monatslohn plus Zulage, zieht die prozentualen Beiträge und den BVG-Betrag ab und zählt
+**Lohn** (*Lohn → Lohnläufe*): Ein Lauf rechnet je Person Monatslohn plus Zulage und gegebenenfalls 13. Monatslohn, zieht die prozentualen Beiträge und den BVG-Betrag ab und zählt
 Spesen beitragsfrei dazu. Buchen erzeugt Lohn- und Sozialaufwand, «Als ausbezahlt buchen» den Bankabgang. Die vorbelegten Sätze sind Richtwerte und
 müssen mit den Verfügungen der Ausgleichskasse und der Versicherer abgeglichen werden.
+
+*13. Monatslohn:* Im Personalstamm wählbar – Auszahlung im Dezember oder je zur Hälfte im Juni und Dezember. Pro Monat entsteht ein Zwölftel des
+Monatslohns, bei Ein- oder Austritt im Monat anteilig nach Tagen. Bei einem Austritt wird der aufgelaufene Anspruch im Austrittsmonat ausbezahlt.
+Der Betrag ist beitragspflichtig und lässt sich im Entwurf des Lohnlaufs überschreiben. Eine monatliche Rückstellung wird nicht gebucht.
+
+*Lohnausweis* (*Lohnläufe → Lohnausweise*): Jahreswerte je Person aus den **gebuchten** Lohnläufen, als PDF gegliedert nach den Buchstaben und
+Ziffern des Formulars 11: Ziffer 1 Lohn inkl. 13. Monatslohn, Ziffer 3 Zulagen, Ziffer 8 Bruttolohn, Ziffer 9 AHV/IV/EO/ALV/NBUV, Ziffer 10 BVG,
+Ziffer 11 Nettolohn, Ziffer 13 Spesen; F, G und Ziffer 15 kommen aus dem Personalstamm. Krankentaggeld-Abzüge gehören nicht in Ziffer 9 und werden
+in den Bemerkungen ausgewiesen. Beträge in ganzen Franken.
 
 **Zahlungsdateien:** Unter *Kreditoren* offene Rechnungen ankreuzen und «Zahlungsdatei» wählen; die pain.001-Datei wird im E-Banking hochgeladen.
 Die Datei bucht nichts – die Zahlung wird danach wie gewohnt erfasst.
@@ -337,9 +346,10 @@ Der Lagerabgang wird beim Ausliefern des Auftrags gebucht – oder beim Buchen d
    Mahnstufen unter *Debitoren → Mahnwesen* und die MwSt-Methode in den Firmendaten prüfen.
 6. Eröffnungssalden (z.B. Bankguthaben, Eigenkapital) als manuelle Buchung im Journal erfassen.
 
-## Bekannte Grenzen (Stand 1.3)
+## Bekannte Grenzen (Stand 1.4)
 
-- **Lohn:** einfache Monatslohnabrechnung – ohne Quellensteuer, Lohnausweis, 13. Monatslohn, Kinderzulagen, Stundenlöhne und Lohnmeldung (ELM)
+- **Lohn:** Monatslohnabrechnung ohne Quellensteuer, Kinderzulagen, Stundenlöhne und Lohnmeldung (ELM)
+- **Lohnausweis:** dem Formular 11 nachgebildet, aber nicht das amtliche Formular mit Barcode; Gehaltsnebenleistungen (Ziffer 2), Pauschalspesen und Einkäufe in die Pensionskasse werden nicht geführt. Vor dem ersten Versand durch den Treuhänder prüfen lassen
 - **Zahlungsdateien (pain.001):** nur IBAN-Zahlungen in CHF und EUR; nach den Swiss Payment Standards erzeugt, aber nicht mit einer Bank erprobt
 - **Lagerorte:** Verkaufs- und Einkaufsbelege buchen auf den ersten aktiven Lagerort; die Wahl des Lagerorts pro Beleg fehlt
 - **Chargen:** Abgänge aus Belegen folgen FIFO; eine gezielte Chargenwahl pro Belegposition fehlt. Seriennummern werden wie Chargen geführt
@@ -359,7 +369,7 @@ Die Suite startet eine frische Wegwerf-Datenbank, die Anwendung und einen Mail-F
 Anmeldung, Rollenrechte, Zwei-Faktor-Anmeldung mit Wiederherstellungscodes, Belegfluss, Teillieferung, Gutschriften samt Storno, Mahnwesen mit
 Verzugszins und Sammelmahnung, Zahlungsabgleich, Zahlungsdateien, Abo-Rechnungen, Fremdwährungen und Kurshistorie, Bestellwesen, Lagerorte,
 Chargen, Inventur, Projekte und Zeiterfassung, Kontakte, Bankabstimmung, Journal-Export, Lohn, Blättern in grossen Listen, PDF, E-Mail-Versand
-und den Jahresabschluss. Dazu kommen Unit-Tests der Rechenlogik und der Überwachung (75 Tests). Nach jeder Buchung wird geprüft, dass die Bilanz ausgeglichen ist.
+und den Jahresabschluss. Dazu kommen Unit-Tests der Rechenlogik und der Überwachung (77 Tests). Nach jeder Buchung wird geprüft, dass die Bilanz ausgeglichen ist.
 
 Die Oberfläche selbst (Klickwege im Browser) ist nicht automatisiert getestet.
 

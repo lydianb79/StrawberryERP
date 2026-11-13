@@ -170,3 +170,20 @@ test('Zahlungsdatei: Prüfungen und Zeichenbereinigung', async () => {
   assert.throws(() => buildPain001({ name: 'x', iban: '' }, [pay], { date: '2030-01-01' }), /IBAN/);
   assert.throws(() => buildPain001(debtor, [], { date: '2030-01-01' }));
 });
+
+test('13. Monatslohn: Auszahlungsmonate und anteilige Berechnung', async () => {
+  const { thirteenthFor } = await import('../src/services/payroll.js');
+  const e = (o) => ({ monthly_gross: 6000, thirteenth: 'december', entry_date: null, exit_date: null, ...o });
+  assert.equal(thirteenthFor(e({}), '2026-12'), 6000);
+  assert.equal(thirteenthFor(e({}), '2026-11'), 0);
+  assert.equal(thirteenthFor(e({ thirteenth: 'none' }), '2026-12'), 0);
+  assert.equal(thirteenthFor(e({ entry_date: '2026-07-01' }), '2026-12'), 3000, 'Eintritt Mitte Jahr');
+  assert.equal(thirteenthFor(e({ entry_date: '2026-04-16' }), '2026-12'), 4250, 'halber April plus acht Monate');
+  assert.equal(thirteenthFor(e({ entry_date: '2025-03-01' }), '2026-12'), 6000, 'Eintritt in einem Vorjahr');
+  assert.equal(thirteenthFor(e({ thirteenth: 'half' }), '2026-06'), 3000);
+  assert.equal(thirteenthFor(e({ thirteenth: 'half' }), '2026-12'), 3000);
+  assert.equal(thirteenthFor(e({ thirteenth: 'half' }), '2026-09'), 0);
+  assert.equal(thirteenthFor(e({ exit_date: '2026-09-30' }), '2026-09'), 4500, 'Austritt: aufgelaufener Anspruch wird ausbezahlt');
+  assert.equal(thirteenthFor(e({ thirteenth: 'half', exit_date: '2026-08-15' }), '2026-08'), 741.95, 'nach der Juni-Auszahlung nur Juli und halber August');
+  assert.equal(thirteenthFor(e({ exit_date: '2026-09-30' }), '2026-08'), 0, 'vor dem Austrittsmonat keine Auszahlung');
+});

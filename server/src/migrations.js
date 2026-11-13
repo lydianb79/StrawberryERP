@@ -275,6 +275,18 @@ export const MIGRATIONS = [
       `INSERT IGNORE INTO role_permissions (role_id, permission) SELECT id, 'projects.read' FROM roles WHERE name = 'Nur Lesen'`,
     ],
   },
+  {
+    version: 5,
+    name: '1.4: 13. Monatslohn, Lohnausweis',
+    statements: [
+      `ALTER TABLE employees
+         ADD COLUMN thirteenth ENUM('none','december','half') NOT NULL DEFAULT 'none',
+         ADD COLUMN free_transport TINYINT(1) NOT NULL DEFAULT 0,
+         ADD COLUMN canteen TINYINT(1) NOT NULL DEFAULT 0,
+         ADD COLUMN certificate_remarks VARCHAR(500) NULL`,
+      `ALTER TABLE payslips ADD COLUMN thirteenth DECIMAL(14,2) NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 1;

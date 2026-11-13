@@ -1,5 +1,5 @@
 // Einfache Lohnabrechnung: Monatslauf mit prozentualen Abzügen, Lohnabrechnung, Verbuchung und Auszahlung.
-// Nicht enthalten: Quellensteuer, Lohnausweis, 13. Monatslohn, Kinderzulagen, Stundenlöhne.
+// Mit 13. Monatslohn und Lohnausweis. Nicht enthalten: Quellensteuer, Kinderzulagen, Stundenlöhne, Lohnmeldung (ELM).
 import { q, one } from '../db.js';
 import { HttpError, round2, today } from '../util.js';
 import { getSettings, getLogo } from './settings.js';
@@ -7,10 +7,38 @@ import { postEntry, reverseEntriesByRef, accountIdByNumber } from './ledger.js';
 
 const r05 = (n) => Math.round(n * 20) / 20; // Abzüge auf 5 Rappen runden
 
-/** Berechnet eine Lohnabrechnung aus Monatslohn, Zulage, Spesen und den eingestellten Sätzen. */
-export function computePayslip(employee, rates, { bonus = 0, expenses = 0 } = {}) {
+const iso = (y, m, d) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+const lastDay = (y, m) => new Date(y, m, 0).getDate();
+
+/**
+ * 13. Monatslohn für einen Abrechnungsmonat (JJJJ-MM).
+ * mode: 'december' = Auszahlung im Dezember, 'half' = je zur Hälfte im Juni und Dezember.
+ * Pro Monat entsteht ein Zwölftel des Monatslohns, bei Ein- oder Austritt im Monat anteilig nach Tagen.
+ * Ausbezahlt wird der seit der letzten Auszahlung aufgelaufene Anspruch – im Auszahlungsmonat oder im Austrittsmonat.
+ */
+export function thirteenthFor(employee, period) {
+  const mode = employee.thirteenth;
+  if (!mode || mode === 'none') return 0;
+  const [y, m] = period.split('-').map(Number);
+  const exitsNow = !!employee.exit_date && employee.exit_date.slice(0, 7) === period;
+  const payout = m === 12 || (mode === 'half' && m === 6) || exitsNow;
+  if (!payout) return 0;
+  const from = mode === 'half' && m > 6 ? 7 : 1;
+  let months = 0;
+  for (let mm = from; mm <= m; mm++) {
+    const days = lastDay(y, mm);
+    const start = employee.entry_date && employee.entry_date > iso(y, mm, 1) ? employee.entry_date : iso(y, mm, 1);
+    const end = employee.exit_date && employee.exit_date < iso(y, mm, days) ? employee.exit_date : iso(y, mm, days);
+    if (start > end) continue;
+    months += (Number(end.slice(8, 10)) - Number(start.slice(8, 10)) + 1) / days;
+  }
+  return r05(Number(employee.monthly_gross) * months / 12);
+}
+
+/** Berechnet eine Lohnabrechnung aus Monatslohn, 13. Monatslohn, Zulage, Spesen und den eingestellten Sätzen. */
+export function computePayslip(employee, rates, { bonus = 0, expenses = 0, thirteenth = 0 } = {}) {
   const base = round2(employee.monthly_gross);
-  const gross = round2(base + round2(bonus));
+  const gross = round2(base + round2(bonus) + round2(thirteenth));
   const line = (r) => ({ key: r.key, label: r.label, rate: Number(r.rate) || 0, amount: r05(gross * (Number(r.rate) || 0) / 100) });
   const deductions = (rates.employee || []).map(line).filter((l) => l.amount);
   if (employee.bvg_employee > 0) deductions.push({ key: 'bvg', label: 'Pensionskasse (BVG)', rate: null, amount: round2(employee.bvg_employee) });
@@ -18,7 +46,7 @@ export function computePayslip(employee, rates, { bonus = 0, expenses = 0 } = {}
   if (employee.bvg_employer > 0) employer.push({ key: 'bvg', label: 'Pensionskasse (BVG)', rate: null, amount: round2(employee.bvg_employer) });
   const deduction_total = round2(deductions.reduce((s, l) => s + l.amount, 0));
   const employer_total = round2(employer.reduce((s, l) => s + l.amount, 0));
-  return { base, bonus: round2(bonus), expenses: round2(expenses), gross, deductions, employer, deduction_total, employer_total,
+  return { base, bonus: round2(bonus), thirteenth: round2(thirteenth), expenses: round2(expenses), gross, deductions, employer, deduction_total, employer_total,
     net: round2(gross - deduction_total + round2(expenses)) };
 }
 
@@ -26,9 +54,9 @@ const parse = (p) => ({ ...p, deductions: JSON.parse(p.deductions), employer: JS
 
 async function writeSlip(conn, runId, employee, rates, extra, slipId) {
   const c = computePayslip(employee, rates, extra);
-  const values = [c.base, c.bonus, c.expenses, c.gross, JSON.stringify(c.deductions), JSON.stringify(c.employer), c.deduction_total, c.employer_total, c.net];
-  if (slipId) await q('UPDATE payslips SET base=?, bonus=?, expenses=?, gross=?, deductions=?, employer=?, deduction_total=?, employer_total=?, net=? WHERE id=?', [...values, slipId], conn);
-  else await q('INSERT INTO payslips (run_id, employee_id, base, bonus, expenses, gross, deductions, employer, deduction_total, employer_total, net) VALUES (?,?,?,?,?,?,?,?,?,?,?)', [runId, employee.id, ...values], conn);
+  const values = [c.base, c.bonus, c.thirteenth, c.expenses, c.gross, JSON.stringify(c.deductions), JSON.stringify(c.employer), c.deduction_total, c.employer_total, c.net];
+  if (slipId) await q('UPDATE payslips SET base=?, bonus=?, thirteenth=?, expenses=?, gross=?, deductions=?, employer=?, deduction_total=?, employer_total=?, net=? WHERE id=?', [...values, slipId], conn);
+  else await q('INSERT INTO payslips (run_id, employee_id, base, bonus, thirteenth, expenses, gross, deductions, employer, deduction_total, employer_total, net) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', [runId, employee.id, ...values], conn);
 }
 
 /** Lohnlauf für einen Monat (JJJJ-MM) anlegen: eine Abrechnung je aktive, im Monat angestellte Person. */
@@ -42,7 +70,7 @@ export async function createRun(conn, user, period) {
   if (!employees.length) throw new HttpError(400, 'Es sind keine aktiven Mitarbeitenden für diesen Monat erfasst.');
   const { payroll } = await getSettings(conn);
   const res = await q('INSERT INTO payroll_runs (period, date, created_by) VALUES (?,?,?)', [period, last, user?.id ?? null], conn);
-  for (const e of employees) await writeSlip(conn, res.insertId, e, payroll);
+  for (const e of employees) await writeSlip(conn, res.insertId, e, payroll, { thirteenth: thirteenthFor(e, period) });
   return res.insertId;
 }
 
@@ -70,13 +98,14 @@ async function lockRun(conn, id, status) {
 }
 
 /** Zulage und Spesen einer Abrechnung im Entwurf ändern; die Abzüge werden neu gerechnet. */
-export async function updateSlip(conn, slipId, { bonus, expenses }) {
+export async function updateSlip(conn, slipId, { bonus, expenses, thirteenth }) {
   const slip = await one('SELECT * FROM payslips WHERE id = ?', [slipId], conn);
   if (!slip) throw new HttpError(404, 'Abrechnung nicht gefunden');
   await lockRun(conn, slip.run_id, 'draft');
   const employee = await one('SELECT * FROM employees WHERE id = ?', [slip.employee_id], conn);
   const { payroll } = await getSettings(conn);
-  await writeSlip(conn, slip.run_id, { ...employee, monthly_gross: slip.base }, payroll, { bonus: Number(bonus) || 0, expenses: Number(expenses) || 0 }, slipId);
+  await writeSlip(conn, slip.run_id, { ...employee, monthly_gross: slip.base }, payroll, { bonus: Number(bonus) || 0, expenses: Number(expenses) || 0,
+    thirteenth: thirteenth === undefined ? slip.thirteenth : Number(thirteenth) || 0 }, slipId);
   return slip.run_id;
 }
 
@@ -133,6 +162,7 @@ export async function payslipDocument(conn, slipId) {
   const line = (description, amount, rate) => ({ description, qty: rate ?? 1, unit: rate != null ? '%' : '', unit_price: rate != null ? p.gross : amount,
     discount_pct: 0, vat_rate: 0, line_total: amount, sku: '' });
   const items = [line('Monatslohn', p.base)];
+  if (p.thirteenth) items.push(line('13. Monatslohn', p.thirteenth));
   if (p.bonus) items.push(line('Zulage / Bonus', p.bonus));
   for (const d of p.deductions) items.push(line(`Abzug ${d.label}`, -d.amount, d.rate));
   if (p.expenses) items.push(line('Spesen (nicht beitragspflichtig)', p.expenses));
@@ -145,4 +175,39 @@ export async function payslipDocument(conn, slipId) {
   };
   const partner = { company: e.name, street: e.street, zip: e.zip, city: e.city, country: 'Schweiz', number: e.number };
   return { doc, items, partner, settings, logo: await getLogo(conn), filename: `Lohnabrechnung-${run.period}-${e.number}.pdf`.replace(/[^\w.\-]/g, '_') };
+}
+
+// ---------- Lohnausweis ----------
+
+// Arbeitnehmerbeiträge, die in Ziffer 9 des Lohnausweises gehören (AHV/IV/EO/ALV/NBUV); Krankentaggeld gehört nicht dazu.
+const ZIFFER_9 = ['ahv', 'alv', 'nbu'];
+
+/**
+ * Jahreswerte je Person aus den gebuchten Lohnläufen eines Kalenderjahrs, gegliedert nach den Ziffern des Lohnausweises (Formular 11).
+ */
+export async function certificates(conn, year) {
+  const y = Number(year);
+  if (!(y >= 2000 && y <= 2100)) throw new HttpError(400, 'Bitte ein gültiges Jahr angeben.');
+  const runs = await q('SELECT id, period, status FROM payroll_runs WHERE period LIKE ? ORDER BY period', [`${y}-%`], conn);
+  const booked = runs.filter((r) => r.status !== 'draft');
+  const slips = booked.length
+    ? await q(`SELECT p.*, r.period FROM payslips p JOIN payroll_runs r ON r.id = p.run_id WHERE p.run_id IN (?) ORDER BY r.period`, [booked.map((r) => r.id)], conn)
+    : [];
+  const employees = slips.length ? await q('SELECT * FROM employees WHERE id IN (?) ORDER BY name', [[...new Set(slips.map((s) => s.employee_id))]], conn) : [];
+  const rows = employees.map((e) => {
+    const mine = slips.filter((s) => s.employee_id === e.id).map(parse);
+    const sum = (fn) => round2(mine.reduce((t, s) => t + fn(s), 0));
+    const ded = (keys, invert = false) => sum((s) => s.deductions.filter((d) => keys.includes(d.key) !== invert).reduce((t, d) => t + d.amount, 0));
+    const z1 = sum((s) => s.base + s.thirteenth), z3 = sum((s) => s.bonus);
+    const z8 = round2(z1 + z3), z9 = ded(ZIFFER_9), z10 = ded(['bvg']);
+    const from = e.entry_date && e.entry_date > `${y}-01-01` ? e.entry_date : `${y}-01-01`;
+    const to = e.exit_date && e.exit_date < `${y}-12-31` ? e.exit_date : `${y}-12-31`;
+    return {
+      employee: e, year: y, from, to, months: mine.map((s) => s.period),
+      z1, z3, z8, z9, z10, z11: round2(z8 - z9 - z10), z13: sum((s) => s.expenses),
+      // Abzüge, die nicht in den Ziffern 9 und 10 erscheinen (z.B. Krankentaggeld) – zur Kontrolle
+      otherDeductions: ded([...ZIFFER_9, 'bvg'], true),
+    };
+  });
+  return { year: y, runs: runs.length, draftRuns: runs.filter((r) => r.status === 'draft').map((r) => r.period), rows };
 }

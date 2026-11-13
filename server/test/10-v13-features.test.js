@@ -446,3 +446,51 @@ test('Kurshistorie: Kurs zum Belegdatum', async () => {
   await a.put(`/currencies/${eur.id}`, { rate: eur.rate });
   assert.equal((await a.get('/currency-history?code=EUR'))[0].rate, eur.rate, 'ein Eintrag pro Tag, der letzte gilt');
 });
+
+test('13. Monatslohn: anteilig bei Eintritt, Auszahlung im Dezember; Lohnausweis mit Jahreswerten', async () => {
+  const a = await admin();
+  const year = 2100 - Math.floor(Math.random() * 40) - 1;
+  await a.post('/accounting/fiscal-years', { name: uniq(String(year)), start_date: `${year}-01-01`, end_date: `${year}-12-31` });
+  for (const e of await a.get('/employees')) await a.put(`/employees/${e.id}`, { active: false });
+  // Eintritt am 1. Juli: 6 von 12 Monaten → halber 13. Monatslohn
+  const emp = await a.post('/employees', { name: 'Dora Dreizehn', street: 'Weg 3', zip: '3000', city: 'Bern', ahv_no: '756.1234.5678.97', monthly_gross: 6000,
+    bvg_employee: 250, bvg_employer: 250, entry_date: `${year}-07-01`, thirteenth: 'december', canteen: true, certificate_remarks: 'Testbemerkung', active: true });
+  assert.equal(emp.thirteenth, 'december');
+
+  const nov = await a.post('/payroll', { period: `${year}-11` });
+  assert.equal(nov.slips[0].thirteenth, 0, 'im November keine Auszahlung');
+  near(nov.slips[0].gross, 6000);
+  const withBonus = await a.put(`/payslips/${nov.slips[0].id}`, { bonus: 500, expenses: 120 });
+  near(withBonus.slips[0].gross, 6500);
+  await a.post(`/payroll/${nov.id}/post`);
+
+  const dec = await a.post('/payroll', { period: `${year}-12` });
+  const slip = dec.slips[0];
+  near(slip.thirteenth, 3000, '13. Monatslohn anteilig für Juli bis Dezember');
+  near(slip.gross, 9000);
+  near(slip.deduction_total, 9000 * 0.081 + 250, 'Abzüge auch auf dem 13. Monatslohn');
+  assert.ok(isPdf(await a.req('GET', `/payslips/${slip.id}/pdf`)));
+
+  // Lohnausweis: solange der Dezember nur Entwurf ist, zählt er nicht
+  let cert = await a.get(`/payroll-certificates/${year}`);
+  assert.deepEqual(cert.draftRuns, [`${year}-12`]);
+  assert.equal(cert.rows[0].months.length, 1);
+  await a.post(`/payroll/${dec.id}/post`);
+  cert = await a.get(`/payroll-certificates/${year}`);
+  const row = cert.rows.find((r) => r.employee.id === emp.id);
+  assert.deepEqual(row.months, [`${year}-11`, `${year}-12`]);
+  assert.equal(row.from, `${year}-07-01`);
+  near(row.z1, 6000 + 6000 + 3000, 'Ziffer 1: Lohn inkl. 13. Monatslohn');
+  near(row.z3, 500, 'Ziffer 3: unregelmässige Leistungen');
+  near(row.z8, 15500, 'Ziffer 8: Bruttolohn');
+  near(row.z9, 15500 * 0.076, 'Ziffer 9: AHV 5.3 + ALV 1.1 + NBU 1.2 Prozent');
+  near(row.z10, 500, 'Ziffer 10: BVG');
+  near(row.z11, row.z8 - row.z9 - row.z10, 'Ziffer 11: Nettolohn');
+  near(row.z13, 120, 'Ziffer 13: Spesen');
+  near(row.otherDeductions, 15500 * 0.005, 'Krankentaggeld erscheint nicht in Ziffer 9');
+  const pdf = await a.req('GET', `/payroll-certificates/${year}/${emp.id}/pdf`);
+  assert.ok(isPdf(pdf) && pdf.data.length > 2500);
+  await a.fails(404, 'GET', `/payroll-certificates/${year}/999999/pdf`);
+  await a.fails(400, 'GET', '/payroll-certificates/abc');
+  for (const run of [dec, nov]) { await a.del(`/payroll/${run.id}`); await a.del(`/payroll/${run.id}`); }
+});
