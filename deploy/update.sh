@@ -29,7 +29,8 @@ main() {
 
   local INSTALLED; INSTALLED="$(node -p "require('$APP_DIR/server/package.json').version" 2>/dev/null || echo unbekannt)"
   echo "==> Releases abrufen"
-  git fetch --tags --quiet origin
+  # --force: ein neu gesetzter Release-Tag ersetzt den lokal vorhandenen, statt den Abruf scheitern zu lassen
+  git fetch --tags --force --quiet origin
   [ -n "$TARGET" ] || TARGET="$(git tag -l 'v*' --sort=-v:refname | head -1)"
   [ -n "$TARGET" ] || { echo "Es wurde noch kein Release veröffentlicht." >&2; exit 1; }
   git rev-parse -q --verify "refs/tags/$TARGET" >/dev/null || { echo "Das Release $TARGET existiert nicht. Verfügbar: $(git tag -l 'v*' --sort=-v:refname | head -5 | tr '\n' ' ')" >&2; exit 1; }
