@@ -104,6 +104,59 @@ Beim selbstsignierten Zertifikat zeigt der Browser einmalig eine Warnung; das Sk
 Die HTTPS-Konfiguration bleibt bei Updates erhalten. Die Let's-Encrypt-Variante setzt voraus, dass die Domain auf den Server zeigt
 und Port 80 aus dem Internet erreichbar ist.
 
+### Gültiges Zertifikat ohne Browserwarnung
+
+Ein öffentlich anerkanntes Zertifikat braucht einen Domainnamen – für eine nackte IP-Adresse (z.B. `10.211.55.9`) stellt keine
+Zertifizierungsstelle eines aus. Welcher Weg passt, hängt davon ab, wie der Server erreichbar ist:
+
+| Situation | Weg |
+|---|---|
+| Test- oder Einzelplatzinstallation im internen Netz | Dem selbstsignierten Zertifikat auf den eigenen Geräten vertrauen |
+| Server aus dem Internet erreichbar, eigene Domain | Let's Encrypt über `enable-https.sh --domain … --email …` |
+| Server nur intern erreichbar, eigene Domain | Let's Encrypt mit DNS-Nachweis (von Hand, siehe unten) |
+| Zertifikat bereits vorhanden (gekauft oder firmeneigene Zertifizierungsstelle) | Dateien ablegen und nginx neu laden |
+
+**Dem selbstsignierten Zertifikat vertrauen (macOS):** Das von `enable-https.sh` erzeugte Zertifikat ist auf die IP-Adresse und den Hostnamen
+des Servers ausgestellt. Es fehlt nur das Vertrauen auf dem Gerät, von dem aus zugegriffen wird:
+
+```bash
+scp root@SERVER:/etc/pki/tls/certs/strawberryerp.crt ~/Downloads/
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/Downloads/strawberryerp.crt
+```
+
+Danach zeigen Safari und Chrome keine Warnung mehr. Das gilt nur für Geräte, auf denen das Zertifikat so eingetragen wurde; vorher den
+Fingerabdruck vergleichen, den `enable-https.sh` ausgegeben hat (`openssl x509 -in strawberryerp.crt -noout -fingerprint -sha256`).
+Unter Windows: Zertifikat doppelklicken → «Zertifikat installieren» → «Lokaler Computer» → «Vertrauenswürdige Stammzertifizierungsstellen».
+
+**Let's Encrypt für einen aus dem Internet erreichbaren Server:** Die Domain muss per DNS auf den Server zeigen und Port 80 offen sein.
+Das Skript holt das Zertifikat und richtet die automatische Erneuerung ein:
+
+```bash
+sudo bash deploy/enable-https.sh --domain erp.ihre-firma.ch --email it@ihre-firma.ch
+```
+
+**Let's Encrypt für einen nur intern erreichbaren Server:** Mit einer eigenen Domain geht das über den DNS-Nachweis (DNS-01): Statt eines
+Zugriffs von aussen wird ein TXT-Eintrag in der DNS-Zone geprüft, und `erp.ihre-firma.ch` zeigt intern auf die private IP. `enable-https.sh`
+unterstützt das noch nicht; nötig ist certbot mit dem Plugin des DNS-Anbieters (z.B. `python3-certbot-dns-cloudflare`) oder der manuelle Modus
+`certbot certonly --manual --preferred-challenges dns -d erp.ihre-firma.ch`, bei dem der Eintrag alle 90 Tage von Hand erneuert werden muss.
+Das ausgestellte Zertifikat wird danach wie ein vorhandenes eingebunden.
+
+**Vorhandenes Zertifikat einbinden:** Zertifikat samt Zwischenzertifikaten (Kette, PEM) und privaten Schlüssel an die Stellen legen,
+auf die die nginx-Konfiguration verweist, dann nginx neu laden:
+
+```bash
+sudo install -m 644 fullchain.pem /etc/pki/tls/certs/strawberryerp.crt
+sudo install -m 600 privkey.pem /etc/pki/tls/private/strawberryerp.key
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Voraussetzung ist, dass `enable-https.sh` (ohne Domain) einmal gelaufen ist und die HTTPS-Konfiguration angelegt hat. Ein erneuter Aufruf
+des Skripts ohne Domain würde die Dateien wieder durch ein selbstsigniertes Zertifikat ersetzen. Updates (`deploy/update.sh`) lassen
+Zertifikat und Konfiguration unangetastet.
+
+Nicht erprobt sind die Let's-Encrypt-Variante des Skripts und der DNS-Nachweis; das selbstsignierte Zertifikat und der Erhalt der
+Konfiguration über Updates hinweg sind auf CentOS Stream 10 getestet.
+
 **Datensicherung:** Die Installation richtet eine tägliche Sicherung ein (systemd-Timer `strawberryerp-backup.timer`, 02:15 Uhr;
 verpasste Läufe werden nachgeholt). Die Sicherungen liegen komprimiert in `/var/backups/strawberryerp`, werden nach dem Schreiben
 geprüft und nach 30 Tagen gelöscht.
