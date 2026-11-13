@@ -14,7 +14,9 @@ SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "==> Pakete installieren"
 dnf -y module enable nodejs:22 2>/dev/null || true   # CentOS Stream 9: Modul-Stream; Stream 10: Standard
-dnf -y install nodejs npm mysql-server nginx rsync openssl policycoreutils-python-utils firewalld
+dnf -y install nodejs /usr/bin/npm nginx rsync openssl firewalld
+# MySQL heisst je nach Version «mysql-server» (Stream 9) oder «mysql8.4-server» (Stream 10)
+dnf -y install mysql-server || dnf -y install mysql8.4-server
 
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 if [ "$NODE_MAJOR" -lt 22 ]; then
