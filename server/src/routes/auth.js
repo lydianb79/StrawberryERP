@@ -10,7 +10,7 @@ const DUMMY_HASH = bcrypt.hashSync('strawberry-dummy', 12);
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 20,
+  limit: Number(process.env.LOGIN_RATE_LIMIT) || 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Zu viele Anmeldeversuche. Bitte in einigen Minuten erneut versuchen.' },

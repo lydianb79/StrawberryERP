@@ -22,7 +22,13 @@ export function addDays(dateStr, days) {
   return isoDate(new Date(y, m - 1, d + Number(days || 0)));
 }
 
-export const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
+/** Gültiges Kalenderdatum im Format JJJJ-MM-TT (der 30. Februar wird abgelehnt). */
+export const isDate = (s) => {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y, m, d] = s.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d;
+};
 
 export function needDate(value, label) {
   if (!isDate(value)) throw new HttpError(400, `${label}: ungültiges Datum`);

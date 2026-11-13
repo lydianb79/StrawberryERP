@@ -1,0 +1,11 @@
+[Unit]
+Description=StrawberryERP – tägliche Datensicherung
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+RandomizedDelaySec=10min
+# Verpasste Läufe (Server war aus) werden beim nächsten Start nachgeholt
+Persistent=true
+
+[Install]
+WantedBy=timers.target

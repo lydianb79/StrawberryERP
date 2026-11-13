@@ -85,17 +85,34 @@ journalctl -u strawberryerp -f                         # Log
 ```
 
 
-**HTTPS:** `dnf install certbot python3-certbot-nginx && certbot --nginx -d erp.ihre-domain.ch`,
-danach in `/etc/strawberryerp.env` `COOKIE_SECURE=true` setzen und `systemctl restart strawberryerp`.
-
-**Datensicherung:** `deploy/backup.sh` erstellt komprimierte `mysqldump`-Sicherungen nach `/var/backups/strawberryerp` und löscht Stände, die älter als 30 Tage sind. Einrichtung als täglicher Cron-Job:
+**HTTPS:**
 
 ```bash
-sudo install -m 700 deploy/backup.sh /opt/strawberryerp-backup.sh
-echo '15 2 * * * root /opt/strawberryerp-backup.sh' | sudo tee /etc/cron.d/strawberryerp-backup
+sudo bash deploy/enable-https.sh                                             # internes Netz: selbstsigniertes Zertifikat
+sudo bash deploy/enable-https.sh --domain erp.firma.ch --email it@firma.ch   # öffentliche Domain: Let's Encrypt
 ```
 
-Mit Docker: `docker compose exec db sh -c 'mysqldump -ustrawberry -p"$MYSQL_PASSWORD" strawberryerp' | gzip > backup.sql.gz`
+Das Skript richtet das Zertifikat ein, leitet HTTP auf HTTPS um und stellt das Sitzungs-Cookie auf «nur verschlüsselt».
+Beim selbstsignierten Zertifikat zeigt der Browser einmalig eine Warnung; das Skript gibt den Fingerabdruck zum Vergleichen aus.
+Die HTTPS-Konfiguration bleibt bei Updates erhalten. Die Let's-Encrypt-Variante setzt voraus, dass die Domain auf den Server zeigt
+und Port 80 aus dem Internet erreichbar ist.
+
+**Datensicherung:** Die Installation richtet eine tägliche Sicherung ein (systemd-Timer `strawberryerp-backup.timer`, 02:15 Uhr;
+verpasste Läufe werden nachgeholt). Die Sicherungen liegen komprimiert in `/var/backups/strawberryerp`, werden nach dem Schreiben
+geprüft und nach 30 Tagen gelöscht.
+
+```bash
+systemctl list-timers strawberryerp-backup.timer    # nächster Lauf
+sudo systemctl start strawberryerp-backup.service   # sofort sichern
+journalctl -u strawberryerp-backup.service -n 20    # Ergebnis der letzten Läufe
+```
+
+Eine Sicherung auf demselben Server schützt nicht vor dessen Ausfall. Für eine Kopie an einen zweiten Ort in `/etc/strawberryerp.env`
+`BACKUP_RSYNC_TARGET=benutzer@backupserver:/pfad/` setzen (SSH-Schlüssel für root vorausgesetzt) – jede Sicherung wird dann zusätzlich dorthin kopiert.
+
+Wiederherstellen: `systemctl stop strawberryerp`, dann `gunzip -c DATEI.sql.gz | mysql -uroot strawberryerp`, danach `systemctl start strawberryerp`.
+
+Mit Docker: `docker compose exec db sh -c 'mysqldump -ustrawberry -p"$MYSQL_PASSWORD" --no-tablespaces strawberryerp' | gzip > backup.sql.gz`
 
 ## Updates auf neue Releases
 
@@ -200,6 +217,21 @@ Der Lagerabgang wird beim Ausliefern des Auftrags gebucht – oder beim Buchen d
 - Keine Neubewertung offener Fremdwährungsposten zum Stichtag; Kursdifferenzen entstehen bei der Zahlung
 - Kurse werden manuell gepflegt (kein automatischer Kursabruf)
 - Die MwSt-Übersicht ist eine Auswertungshilfe und ersetzt nicht die offizielle Abrechnung; das System ersetzt keine Treuhand-/Revisionsprüfung
+
+## Automatische Tests
+
+```bash
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from tests
+docker compose -f docker-compose.test.yml down -v
+```
+
+Die Suite startet eine frische Wegwerf-Datenbank, die Anwendung und einen Mail-Fänger und prüft über die API:
+Anmeldung und Rollenrechte, Stammdaten und Lager, den Belegfluss von der Offerte bis zur Zahlung, Storno,
+Fremdwährungen mit Kursdifferenzen, Bestellwesen, manuelle Buchungen, Kostenstellen, PDF und QR-Rechnung, E-Mail-Versand
+sowie den Jahresabschluss mit Saldovortrag. Dazu kommen Unit-Tests der Rechenlogik (`server/test/unit.test.js`).
+Nach jeder Buchung wird geprüft, dass die Bilanz ausgeglichen ist.
+
+Die Oberfläche selbst (Klickwege im Browser) ist nicht automatisiert getestet.
 
 ## Entwicklung
 

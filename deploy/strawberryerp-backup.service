@@ -1,0 +1,9 @@
+[Unit]
+Description=StrawberryERP – Datensicherung
+After=mysqld.service
+Wants=mysqld.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/strawberryerp-backup
+Nice=10

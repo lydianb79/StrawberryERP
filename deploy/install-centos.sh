@@ -86,8 +86,20 @@ systemctl daemon-reload
 systemctl enable strawberryerp
 systemctl restart strawberryerp
 
+echo "==> Tägliche Datensicherung (systemd-Timer, 02:15 Uhr)"
+install -m 700 "$SRC_DIR/deploy/backup.sh" /usr/local/sbin/strawberryerp-backup
+install -m 644 "$SRC_DIR/deploy/strawberryerp-backup.service" /etc/systemd/system/strawberryerp-backup.service
+install -m 644 "$SRC_DIR/deploy/strawberryerp-backup.timer" /etc/systemd/system/strawberryerp-backup.timer
+systemctl daemon-reload
+systemctl enable --now strawberryerp-backup.timer
+
 echo "==> nginx (Reverse-Proxy)"
-install -m 644 "$SRC_DIR/deploy/nginx-strawberryerp.conf" /etc/nginx/conf.d/strawberryerp.conf
+# Eine mit deploy/enable-https.sh eingerichtete HTTPS-Konfiguration bleibt bei Updates unangetastet.
+if grep -qs 'ssl_certificate' /etc/nginx/conf.d/strawberryerp.conf; then
+  echo "    bestehende HTTPS-Konfiguration beibehalten"
+else
+  install -m 644 "$SRC_DIR/deploy/nginx-strawberryerp.conf" /etc/nginx/conf.d/strawberryerp.conf
+fi
 setsebool -P httpd_can_network_connect 1 || true      # SELinux: nginx darf auf Port 3000 weiterleiten
 nginx -t
 systemctl enable --now nginx
@@ -100,8 +112,9 @@ firewall-cmd --reload
 
 sleep 4
 echo
-echo "Fertig. StrawberryERP ist erreichbar unter:  http://$(hostname -I | awk '{print $1}')/"
+SCHEME=http; grep -qs 'ssl_certificate' /etc/nginx/conf.d/strawberryerp.conf && SCHEME=https
+echo "Fertig. StrawberryERP ist erreichbar unter:  $SCHEME://$(hostname -I | awk '{print $1}')/"
 echo "Anmeldung: $(grep '^ADMIN_EMAIL=' "$ENV_FILE" | cut -d= -f2-)"
 echo "Initialpasswort (nur nach der Erstinstallation):"
 echo "    journalctl -u strawberryerp | grep Initialpasswort"
-echo "Nächste Schritte: Passwort ändern, HTTPS einrichten (siehe README), danach COOKIE_SECURE=true setzen."
+echo "Nächste Schritte: Passwort ändern und HTTPS einrichten:  sudo bash deploy/enable-https.sh"

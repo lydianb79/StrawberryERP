@@ -1,0 +1,62 @@
+# Automatische Tests: startet eine frische Wegwerf-Datenbank, die Anwendung und einen Mail-Fänger
+# und lässt die Testsuite dagegen laufen. Die Zugangsdaten hier gelten nur für diese Testumgebung.
+#
+#   docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from tests
+#   docker compose -f docker-compose.test.yml down -v
+name: strawberryerp-test
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: strawberryerp
+      MYSQL_USER: strawberry
+      MYSQL_PASSWORD: test-db-password
+      MYSQL_ROOT_PASSWORD: test-root-password
+      TZ: Europe/Zurich
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -ustrawberry -p$$MYSQL_PASSWORD --silent"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  mailpit:
+    image: axllent/mailpit:latest
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_USER: strawberry
+      DB_PASSWORD: test-db-password
+      DB_NAME: strawberryerp
+      JWT_SECRET: test-secret-only-for-the-ephemeral-test-stack
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: test-admin-password
+      SEED_DEMO: "false"
+      UPDATE_CHECK: "false"
+      LOGIN_RATE_LIMIT: "1000"
+      TZ: Europe/Zurich
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  tests:
+    build: .
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      TEST_BASE_URL: http://app:3000
+      MAILPIT_URL: http://mailpit:8025
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: test-admin-password
+      JWT_SECRET: test-secret-only-for-the-ephemeral-test-stack
+      TZ: Europe/Zurich
+    command: ["node", "--test", "--test-concurrency=1"]

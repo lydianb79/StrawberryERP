@@ -1,13 +1,14 @@
 {
   "name": "strawberryerp-server",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "type": "module",
   "description": "StrawberryERP – ERP für KMU (API-Server)",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "test": "node --test --test-concurrency=1"
   },
   "engines": {
     "node": ">=22"
