@@ -3,6 +3,8 @@
 Ein schlankes, webbasiertes ERP-System für KMU – von der Offerte bis zum Jahresabschluss.
 Ausgelegt auf Schweizer Verhältnisse (CHF, MwSt-Sätze, Kontenrahmen KMU), Oberfläche auf Deutsch.
 
+![Dashboard von StrawberryERP mit Kennzahlen, Umsatzverlauf und letzten Rechnungen](docs/screenshots/dashboard.png)
+
 ## Funktionen
 
 | Bereich | Umfang |
@@ -360,13 +362,16 @@ als Tabelle über alle Rollen. Wer etwas bearbeiten darf, darf es automatisch au
 | Treuhand | Externer Lesezugriff auf Buchhaltung und offene Posten, ohne Lohn |
 | Nur Lesen | Alles ansehen, ohne Lohn und Administration |
 
+**Rolle eines Benutzers ändern:** unter *Administration → Benutzer* die Zeile des Benutzers anklicken und im Dialog das Feld «Rolle» umstellen.
+Die Änderung gilt ab dem nächsten Seitenaufruf des Benutzers.
+
 Die vordefinierten Rollen lassen sich anpassen oder als Vorlage für eigene Rollen kopieren. Ein Update legt fehlende Rollen an,
 verändert aber keine bestehenden.
 
 **Module** bestimmen, was es in der Firma überhaupt gibt. Unter *Administration → Module* schaltet der Administrator Bereiche aus, die nicht
 gebraucht werden: Offerten, Aufträge, Rechnungen, Debitoren, Artikel und Lager, Einkauf, Kreditoren, Projekte und Zeiterfassung,
 Finanzbuchhaltung, Lohn, Auswertungen. Ein ausgeschaltetes Modul verschwindet für alle aus dem Menü – auch für Administratoren – und
-ist serverseitig gesperrt; die Daten bleiben erhalten, und das Modul lässt sich jederzeit wieder einschalten. Kunden/Lieferanten und die
+ist serverseitig gesperrt. Aussperren kann sich der Administrator damit nicht, weil die Modulseite selbst immer erreichbar bleibt; die Daten bleiben erhalten, und das Modul lässt sich jederzeit wieder einschalten. Kunden/Lieferanten und die
 Administration sind immer aktiv.
 
 ## Erste Schritte nach der Installation
